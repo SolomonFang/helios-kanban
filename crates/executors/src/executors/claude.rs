@@ -56,9 +56,9 @@ fn base_command(claude_code_router: bool, native_binary: bool) -> &'static str {
     if claude_code_router {
         "npx -y @musistudio/claude-code-router@1.0.73 code"
     } else if native_binary {
-        "npx -y @anthropic-ai/claude-code@2.1.112"
+        "npx -y @anthropic-ai/claude-code@2.1.150"
     } else {
-        "npx -y @anthropic-ai/claude-code@2.1.112"
+        "npx -y @anthropic-ai/claude-code@2.1.150"
     }
 }
 
