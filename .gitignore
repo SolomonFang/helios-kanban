@@ -86,3 +86,8 @@ vibe-kanban-cloud/
 
 .jj
 .sisyphus/
+
+# AI tooling runtime artifacts
+.claude/
+.gitnexus/
+/docs

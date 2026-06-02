@@ -572,9 +572,19 @@ pub async fn execute(
         return Ok(());
     }
 
-    event_handle.abort();
-
     request_result?;
+    let model = config.model.as_deref().and_then(sdk::parse_model);
+    sdk::maybe_send_commit_reminder(
+        &client,
+        &config,
+        &log_writer,
+        &mut control_rx,
+        cancel.clone(),
+        &session_id,
+        model,
+    )
+    .await;
+    event_handle.abort();
     log_writer.log_event(&OpencodeExecutorEvent::Done).await?;
 
     Ok(())
