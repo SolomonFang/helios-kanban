@@ -1,12 +1,4 @@
 import {
-  DataWithScrollModifier,
-  ScrollModifier,
-  VirtuosoMessageList,
-  VirtuosoMessageListLicense,
-  VirtuosoMessageListMethods,
-  VirtuosoMessageListProps,
-} from '@virtuoso.dev/message-list';
-import {
   forwardRef,
   useCallback,
   useEffect,
@@ -15,6 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { Virtuoso, VirtuosoHandle, ListRange } from 'react-virtuoso';
 
 import NewDisplayConversationEntry from './NewDisplayConversationEntry';
 import { ApprovalFormProvider } from '@/contexts/ApprovalFormContext';
@@ -59,18 +52,7 @@ interface MessageListContext {
   resetAction: UseResetProcessResult;
 }
 
-const INITIAL_TOP_ITEM = { index: 'LAST' as const, align: 'end' as const };
-
-const InitialDataScrollModifier: ScrollModifier = {
-  type: 'item-location',
-  location: INITIAL_TOP_ITEM,
-  purgeItemSizes: true,
-};
-
-const AutoScrollToBottom: ScrollModifier = {
-  type: 'auto-scroll-to-bottom',
-  autoScroll: 'smooth',
-};
+const LARGE_BURST = 10;
 
 /** Entries that NewDisplayConversationEntry intentionally does not render. */
 function filterRenderableEntries(
@@ -83,106 +65,14 @@ function filterRenderableEntries(
   });
 }
 
-const ScrollToTopOfLastItem: ScrollModifier = {
-  type: 'item-location',
-  location: {
-    index: 'LAST',
-    align: 'start',
-  },
-};
-
-const ItemContent: VirtuosoMessageListProps<
-  DisplayEntry,
-  MessageListContext
->['ItemContent'] = ({ data, context }) => {
-  const attempt = context?.attempt;
-  const resetAction = context?.resetAction;
-
-  // Handle aggregated tool groups (file_read, search, web_fetch)
-  if (isAggregatedGroup(data)) {
-    return (
-      <NewDisplayConversationEntry
-        expansionKey={data.patchKey}
-        aggregatedGroup={data}
-        aggregatedDiffGroup={null}
-        aggregatedThinkingGroup={null}
-        entry={null}
-        executionProcessId={data.executionProcessId}
-        taskAttempt={attempt}
-        resetAction={resetAction}
-      />
-    );
-  }
-
-  // Handle aggregated diff groups (file_edit by same path)
-  if (isAggregatedDiffGroup(data)) {
-    return (
-      <NewDisplayConversationEntry
-        expansionKey={data.patchKey}
-        aggregatedGroup={null}
-        aggregatedDiffGroup={data}
-        aggregatedThinkingGroup={null}
-        entry={null}
-        executionProcessId={data.executionProcessId}
-        taskAttempt={attempt}
-        resetAction={resetAction}
-      />
-    );
-  }
-
-  // Handle aggregated thinking groups (thinking entries in previous turns)
-  if (isAggregatedThinkingGroup(data)) {
-    return (
-      <NewDisplayConversationEntry
-        expansionKey={data.patchKey}
-        aggregatedGroup={null}
-        aggregatedDiffGroup={null}
-        aggregatedThinkingGroup={data}
-        entry={null}
-        executionProcessId={data.executionProcessId}
-        taskAttempt={attempt}
-        resetAction={resetAction}
-      />
-    );
-  }
-
-  if (data.type === 'STDOUT') {
-    return <p>{data.content}</p>;
-  }
-  if (data.type === 'STDERR') {
-    return <p>{data.content}</p>;
-  }
-  if (data.type === 'NORMALIZED_ENTRY' && attempt) {
-    return (
-      <NewDisplayConversationEntry
-        expansionKey={data.patchKey}
-        entry={data.content}
-        aggregatedGroup={null}
-        aggregatedDiffGroup={null}
-        aggregatedThinkingGroup={null}
-        executionProcessId={data.executionProcessId}
-        taskAttempt={attempt}
-        resetAction={resetAction}
-      />
-    );
-  }
-
-  return null;
-};
-
-const computeItemKey: VirtuosoMessageListProps<
-  DisplayEntry,
-  MessageListContext
->['computeItemKey'] = ({ data }) => `conv-${data.patchKey}`;
-
 export const ConversationList = forwardRef<
   ConversationListHandle,
   ConversationListProps
 >(function ConversationList({ attempt }, ref) {
   const resetAction = useResetProcess();
-  const [channelData, setChannelData] =
-    useState<DataWithScrollModifier<DisplayEntry> | null>(null);
+  const [data, setData] = useState<DisplayEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [atBottom, setAtBottom] = useState(true);
   const { setEntries, reset, setTokenUsageInfo } = useEntries();
   const pendingUpdateRef = useRef<{
     entries: PatchTypeWithKey[];
@@ -195,24 +85,26 @@ export const ConversationList = forwardRef<
   const rafIdRef = useRef<number | null>(null);
   const loadingRef = useRef(loading);
   loadingRef.current = loading;
+  // 记录最近一次推送类型，供 effect 决定滚动手势（plan 跳顶，其他交由 followOutput）。
+  const lastAddTypeRef = useRef<AddEntryType | null>(null);
+  // 跟踪当前可见首项索引，供 scrollToPreviousUserMessage 使用。
+  const firstVisibleIndexRef = useRef<number>(0);
+  // 标记首次出现条目，触发跳到底部。
+  const didInitScrollRef = useRef(false);
+  const prevLenRef = useRef(0);
 
+  /** 消费 rAF 队列里的待处理更新并写入 Virtuoso 数据源。 */
   const applyPendingUpdate = useCallback(() => {
     rafIdRef.current = null;
     const pending = pendingUpdateRef.current;
     if (!pending) return;
 
-    let scrollModifier: ScrollModifier = InitialDataScrollModifier;
-
-    if (pending.addType === 'plan' && !loadingRef.current) {
-      scrollModifier = ScrollToTopOfLastItem;
-    } else if (pending.addType === 'running' && !loadingRef.current) {
-      scrollModifier = AutoScrollToBottom;
-    }
+    lastAddTypeRef.current = pending.addType;
 
     const renderableEntries = filterRenderableEntries(pending.entries);
     const aggregatedEntries = aggregateConsecutiveEntries(renderableEntries);
 
-    setChannelData({ data: aggregatedEntries, scrollModifier });
+    setData(aggregatedEntries);
     setEntries(renderableEntries);
 
     const tokenUsage =
@@ -275,8 +167,13 @@ export const ConversationList = forwardRef<
       rafIdRef.current = null;
     }
     pendingUpdateRef.current = null;
+    lastAddTypeRef.current = null;
+    didInitScrollRef.current = false;
+    prevLenRef.current = 0;
+    firstVisibleIndexRef.current = 0;
     setLoading(true);
-    setChannelData(null);
+    setData([]);
+    setAtBottom(true);
     reset();
   }, [attempt.id, reset]);
 
@@ -313,8 +210,7 @@ export const ConversationList = forwardRef<
     useConversationHistory({ attempt, onEntriesUpdated });
 
   // Determine if there are entries to show placeholders
-  const entries = channelData?.data ?? [];
-  const hasEntries = entries.length > 0;
+  const hasEntries = data.length > 0;
 
   // Show placeholders only if script not configured AND not already run
   const showSetupPlaceholder =
@@ -325,7 +221,7 @@ export const ConversationList = forwardRef<
     !hasRunningProcess &&
     hasEntries;
 
-  const messageListRef = useRef<VirtuosoMessageListMethods | null>(null);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
   const messageListContext = useMemo(
     () => ({
       attempt,
@@ -346,23 +242,68 @@ export const ConversationList = forwardRef<
     ]
   );
 
+  // 首次出现条目：跳到底部以查看最新内容。
+  useEffect(() => {
+    if (!didInitScrollRef.current && data.length > 0) {
+      didInitScrollRef.current = true;
+      requestAnimationFrame(() => {
+        virtuosoRef.current?.scrollToIndex({
+          index: 'LAST',
+          align: 'end',
+        });
+      });
+    }
+  }, [data.length]);
+
+  // 计划类条目到达时，跳到末项顶部，使用户能从计划开始处阅读。
+  useEffect(() => {
+    if (
+      didInitScrollRef.current &&
+      lastAddTypeRef.current === 'plan' &&
+      data.length > 0
+    ) {
+      requestAnimationFrame(() => {
+        virtuosoRef.current?.scrollToIndex({
+          index: 'LAST',
+          align: 'start',
+        });
+      });
+    }
+  }, [data.length, data]);
+
+  // 大量追加且用户在底部：强制贴底，避免大流量时跟不上（LARGE_BURST 为经验阈值）。
+  useEffect(() => {
+    const prev = prevLenRef.current;
+    const grewBy = data.length - prev;
+    prevLenRef.current = data.length;
+    if (
+      grewBy >= LARGE_BURST &&
+      atBottom &&
+      data.length > 0 &&
+      didInitScrollRef.current
+    ) {
+      requestAnimationFrame(() => {
+        virtuosoRef.current?.scrollToIndex({
+          index: 'LAST',
+          align: 'end',
+        });
+      });
+    }
+  }, [data.length, atBottom, data]);
+
+  /** 记录 Virtuoso 渲染范围的首项索引，供 scrollToPreviousUserMessage 使用。 */
+  const handleRangeChanged = useCallback((range: ListRange) => {
+    firstVisibleIndexRef.current = range.startIndex;
+  }, []);
+
   // Expose scroll to previous user message functionality via ref
   useImperativeHandle(
     ref,
     () => ({
       scrollToPreviousUserMessage: () => {
-        const data = channelData?.data;
-        if (!data || !messageListRef.current) return;
+        if (data.length === 0 || !virtuosoRef.current) return;
 
-        // Get currently rendered items to find visible range
-        const rendered = messageListRef.current.data.getCurrentlyRendered();
-        if (!rendered.length) return;
-
-        // Find the index of the first visible item in the full data array
-        const firstVisibleKey = rendered[0]?.patchKey;
-        const firstVisibleIndex = data.findIndex(
-          (item) => item.patchKey === firstVisibleKey
-        );
+        const firstVisibleIndex = firstVisibleIndexRef.current;
 
         // Find all user message indices
         const userMessageIndices: number[] = [];
@@ -376,12 +317,12 @@ export const ConversationList = forwardRef<
         });
 
         // Find the user message before the first visible item
-        const targetIndex = userMessageIndices
+        const targetIndex = [...userMessageIndices]
           .reverse()
           .find((idx) => idx < firstVisibleIndex);
 
         if (targetIndex !== undefined) {
-          messageListRef.current.scrollToItem({
+          virtuosoRef.current.scrollToIndex({
             index: targetIndex,
             align: 'start',
             behavior: 'smooth',
@@ -389,19 +330,17 @@ export const ConversationList = forwardRef<
         }
       },
       scrollToBottom: () => {
-        if (!messageListRef.current) return;
-        messageListRef.current.scrollToItem({
+        virtuosoRef.current?.scrollToIndex({
           index: 'LAST',
           align: 'end',
           behavior: 'smooth',
         });
       },
     }),
-    [channelData]
+    [data]
   );
 
-  const showEmptyState =
-    !loading && (channelData?.data?.length ?? 0) === 0;
+  const showEmptyState = !loading && data.length === 0;
 
   return (
     <ApprovalFormProvider>
@@ -413,47 +352,131 @@ export const ConversationList = forwardRef<
             </p>
           </div>
         ) : (
-        <VirtuosoMessageListLicense
-          licenseKey={import.meta.env.VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY}
-        >
-          <VirtuosoMessageList<DisplayEntry, MessageListContext>
-            ref={messageListRef}
+          <Virtuoso
+            ref={virtuosoRef}
             className="h-full scrollbar-none"
-            data={channelData}
-            initialLocation={INITIAL_TOP_ITEM}
+            data={data}
             context={messageListContext}
-            computeItemKey={computeItemKey}
-            ItemContent={ItemContent}
-            Header={({ context }) => (
-              <div className="pt-2">
-                {context?.showSetupPlaceholder && (
-                  <div className="my-base px-double">
-                    <ChatScriptPlaceholder
-                      type="setup"
-                      onConfigure={context.onConfigureSetup}
-                    />
-                  </div>
-                )}
-              </div>
+            computeItemKey={(_index, item) => `conv-${item.patchKey}`}
+            itemContent={(_index, item) => (
+              <ItemRow item={item} context={messageListContext} />
             )}
-            Footer={({ context }) => (
-              <div className="pb-2">
-                {context?.showCleanupPlaceholder && (
-                  <div className="my-base px-double">
-                    <ChatScriptPlaceholder
-                      type="cleanup"
-                      onConfigure={context.onConfigureCleanup}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
+            atBottomStateChange={setAtBottom}
+            followOutput={atBottom ? 'smooth' : false}
+            rangeChanged={handleRangeChanged}
+            // 加大下方视口，避免流式追加时频繁重新测量导致卡顿。
+            increaseViewportBy={{ top: 0, bottom: 600 }}
+            components={{
+              Header: ({ context }) => (
+                <div className="pt-2">
+                  {context?.showSetupPlaceholder && (
+                    <div className="my-base px-double">
+                      <ChatScriptPlaceholder
+                        type="setup"
+                        onConfigure={context.onConfigureSetup}
+                      />
+                    </div>
+                  )}
+                </div>
+              ),
+              Footer: ({ context }) => (
+                <div className="pb-2">
+                  {context?.showCleanupPlaceholder && (
+                    <div className="my-base px-double">
+                      <ChatScriptPlaceholder
+                        type="cleanup"
+                        onConfigure={context.onConfigureCleanup}
+                      />
+                    </div>
+                  )}
+                </div>
+              ),
+            }}
           />
-        </VirtuosoMessageListLicense>
         )}
       </div>
     </ApprovalFormProvider>
   );
 });
+
+/** 渲染单条对话项，分发到聚合/普通/原始日志三种渲染分支。 */
+function ItemRow({
+  item,
+  context,
+}: {
+  item: DisplayEntry;
+  context: MessageListContext;
+}) {
+  const attempt = context.attempt;
+  const resetAction = context.resetAction;
+
+  if (isAggregatedGroup(item)) {
+    return (
+      <NewDisplayConversationEntry
+        expansionKey={item.patchKey}
+        aggregatedGroup={item}
+        aggregatedDiffGroup={null}
+        aggregatedThinkingGroup={null}
+        entry={null}
+        executionProcessId={item.executionProcessId}
+        taskAttempt={attempt}
+        resetAction={resetAction}
+      />
+    );
+  }
+
+  if (isAggregatedDiffGroup(item)) {
+    return (
+      <NewDisplayConversationEntry
+        expansionKey={item.patchKey}
+        aggregatedGroup={null}
+        aggregatedDiffGroup={item}
+        aggregatedThinkingGroup={null}
+        entry={null}
+        executionProcessId={item.executionProcessId}
+        taskAttempt={attempt}
+        resetAction={resetAction}
+      />
+    );
+  }
+
+  if (isAggregatedThinkingGroup(item)) {
+    return (
+      <NewDisplayConversationEntry
+        expansionKey={item.patchKey}
+        aggregatedGroup={null}
+        aggregatedDiffGroup={null}
+        aggregatedThinkingGroup={item}
+        entry={null}
+        executionProcessId={item.executionProcessId}
+        taskAttempt={attempt}
+        resetAction={resetAction}
+      />
+    );
+  }
+
+  if (item.type === 'STDOUT') {
+    return <p>{item.content}</p>;
+  }
+  if (item.type === 'STDERR') {
+    return <p>{item.content}</p>;
+  }
+  if (item.type === 'NORMALIZED_ENTRY' && attempt) {
+    return (
+      <NewDisplayConversationEntry
+        expansionKey={item.patchKey}
+        entry={item.content}
+        aggregatedGroup={null}
+        aggregatedDiffGroup={null}
+        aggregatedThinkingGroup={null}
+        executionProcessId={item.executionProcessId}
+        taskAttempt={attempt}
+        resetAction={resetAction}
+      />
+    );
+  }
+
+  return null;
+}
 
 export default ConversationList;

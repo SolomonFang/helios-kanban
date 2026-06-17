@@ -105,6 +105,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
       shared: path.resolve(__dirname, '../shared'),
     },
+    dedupe: ['@codemirror/state'],
   },
   server: {
     port: parseInt(process.env.FRONTEND_PORT || '3000'),
@@ -124,7 +125,15 @@ export default defineConfig({
     ],
   },
   optimizeDeps: {
-    exclude: ['wa-sqlite'],
+    exclude: [
+      'wa-sqlite',
+      '@codemirror/state',
+      '@codemirror/view',
+      '@codemirror/language',
+      '@codemirror/lang-json',
+      '@codemirror/lint',
+      '@uiw/react-codemirror',
+    ],
   },
   build: { sourcemap: true },
 });

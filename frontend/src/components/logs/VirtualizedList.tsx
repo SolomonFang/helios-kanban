@@ -1,11 +1,4 @@
-import {
-  DataWithScrollModifier,
-  ScrollModifier,
-  VirtuosoMessageList,
-  VirtuosoMessageListLicense,
-  VirtuosoMessageListMethods,
-  VirtuosoMessageListProps,
-} from '@virtuoso.dev/message-list';
+import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import DisplayConversationEntry from '../NormalizedConversation/DisplayConversationEntry';
@@ -30,51 +23,7 @@ interface MessageListContext {
   task?: TaskWithAttemptStatus;
 }
 
-const INITIAL_TOP_ITEM = { index: 'LAST' as const, align: 'end' as const };
-
-const InitialDataScrollModifier: ScrollModifier = {
-  type: 'item-location',
-  location: INITIAL_TOP_ITEM,
-  purgeItemSizes: true,
-};
-
-const AutoScrollToBottom: ScrollModifier = {
-  type: 'auto-scroll-to-bottom',
-  autoScroll: 'smooth',
-};
-
-const ItemContent: VirtuosoMessageListProps<
-  PatchTypeWithKey,
-  MessageListContext
->['ItemContent'] = ({ data, context }) => {
-  const attempt = context?.attempt;
-  const task = context?.task;
-
-  if (data.type === 'STDOUT') {
-    return <p>{data.content}</p>;
-  }
-  if (data.type === 'STDERR') {
-    return <p>{data.content}</p>;
-  }
-  if (data.type === 'NORMALIZED_ENTRY' && attempt) {
-    return (
-      <DisplayConversationEntry
-        expansionKey={data.patchKey}
-        entry={data.content}
-        executionProcessId={data.executionProcessId}
-        taskAttempt={attempt}
-        task={task}
-      />
-    );
-  }
-
-  return null;
-};
-
-const computeItemKey: VirtuosoMessageListProps<
-  PatchTypeWithKey,
-  MessageListContext
->['computeItemKey'] = ({ data }) => `l-${data.patchKey}`;
+const LARGE_BURST = 10;
 
 /** Entries that DisplayConversationEntry does not render (null rows). */
 function filterRenderableEntries(
@@ -88,9 +37,9 @@ function filterRenderableEntries(
 }
 
 const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
-  const [channelData, setChannelData] =
-    useState<DataWithScrollModifier<PatchTypeWithKey> | null>(null);
+  const [data, setData] = useState<PatchTypeWithKey[]>([]);
   const [loading, setLoading] = useState(true);
+  const [atBottom, setAtBottom] = useState(true);
   const { setEntries, reset, setTokenUsageInfo } = useEntries();
   const pendingUpdateRef = useRef<{
     entries: PatchTypeWithKey[];
@@ -101,22 +50,14 @@ const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
   const loadingRef = useRef(loading);
   loadingRef.current = loading;
 
+  /** 消费 rAF 队列里的待处理更新并写入 Virtuoso 数据源。 */
   const applyPendingUpdate = useCallback(() => {
     rafIdRef.current = null;
     const pending = pendingUpdateRef.current;
     if (!pending) return;
 
-    let scrollModifier: ScrollModifier = InitialDataScrollModifier;
-
-    if (
-      (pending.addType === 'running' || pending.addType === 'plan') &&
-      !loadingRef.current
-    ) {
-      scrollModifier = AutoScrollToBottom;
-    }
-
     const renderableEntries = filterRenderableEntries(pending.entries);
-    setChannelData({ data: renderableEntries, scrollModifier });
+    setData(renderableEntries);
     setEntries(renderableEntries);
     setLoading(pending.loading);
   }, [setEntries]);
@@ -128,7 +69,8 @@ const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
     }
     pendingUpdateRef.current = null;
     setLoading(true);
-    setChannelData(null);
+    setData([]);
+    setAtBottom(true);
     reset();
   }, [attempt.id, reset]);
 
@@ -166,7 +108,43 @@ const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
 
   useConversationHistory({ attempt, onEntriesUpdated });
 
-  const messageListRef = useRef<VirtuosoMessageListMethods | null>(null);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const didInitScrollRef = useRef(false);
+  const prevLenRef = useRef(0);
+
+  // 首次出现条目：跳到底部，初始化“跟随”状态。
+  useEffect(() => {
+    if (!didInitScrollRef.current && data.length > 0) {
+      didInitScrollRef.current = true;
+      requestAnimationFrame(() => {
+        virtuosoRef.current?.scrollToIndex({
+          index: data.length - 1,
+          align: 'end',
+        });
+      });
+    }
+  }, [data.length]);
+
+  // 大量追加且用户在底部：强制贴底，避免大流量时跟不上（LARGE_BURST 为经验阈值）。
+  useEffect(() => {
+    const prev = prevLenRef.current;
+    const grewBy = data.length - prev;
+    prevLenRef.current = data.length;
+    if (
+      grewBy >= LARGE_BURST &&
+      atBottom &&
+      data.length > 0 &&
+      didInitScrollRef.current
+    ) {
+      requestAnimationFrame(() => {
+        virtuosoRef.current?.scrollToIndex({
+          index: data.length - 1,
+          align: 'end',
+        });
+      });
+    }
+  }, [data.length, atBottom, data]);
+
   const messageListContext = useMemo(
     () => ({ attempt, task }),
     [attempt, task]
@@ -175,21 +153,22 @@ const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
   return (
     <ApprovalFormProvider>
       <div className="relative flex flex-1 min-h-0 flex-col">
-        <VirtuosoMessageListLicense
-          licenseKey={import.meta.env.VITE_PUBLIC_REACT_VIRTUOSO_LICENSE_KEY}
-        >
-          <VirtuosoMessageList<PatchTypeWithKey, MessageListContext>
-            ref={messageListRef}
-            className="flex-1 min-h-0"
-            data={channelData}
-            initialLocation={INITIAL_TOP_ITEM}
-            context={messageListContext}
-            computeItemKey={computeItemKey}
-            ItemContent={ItemContent}
-            Header={() => <div className="h-2"></div>}
-            Footer={() => <div className="h-2"></div>}
-          />
-        </VirtuosoMessageListLicense>
+        <Virtuoso
+          ref={virtuosoRef}
+          className="flex-1 min-h-0"
+          data={data}
+          context={messageListContext}
+          computeItemKey={(_index, item) => `l-${item.patchKey}`}
+          itemContent={(_index, item) => <ItemRow item={item} context={messageListContext} />}
+          atBottomStateChange={setAtBottom}
+          followOutput={atBottom ? 'smooth' : false}
+          components={{
+            Header: () => <div className="h-2" />,
+            Footer: () => <div className="h-2" />,
+          }}
+          // 加大下方视口，避免流式追加时频繁重新测量导致卡顿。
+          increaseViewportBy={{ top: 0, bottom: 600 }}
+        />
         {loading && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-primary">
             <Loader2 className="h-8 w-8 animate-spin" />
@@ -200,5 +179,36 @@ const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
     </ApprovalFormProvider>
   );
 };
+
+/** 渲染单条对话/日志条目；保持在组件外避免 useCallback 依赖震荡。 */
+function ItemRow({
+  item,
+  context,
+}: {
+  item: PatchTypeWithKey;
+  context: MessageListContext;
+}) {
+  const { attempt, task } = context;
+
+  if (item.type === 'STDOUT') {
+    return <p>{item.content}</p>;
+  }
+  if (item.type === 'STDERR') {
+    return <p>{item.content}</p>;
+  }
+  if (item.type === 'NORMALIZED_ENTRY' && attempt) {
+    return (
+      <DisplayConversationEntry
+        expansionKey={item.patchKey}
+        entry={item.content}
+        executionProcessId={item.executionProcessId}
+        taskAttempt={attempt}
+        task={task}
+      />
+    );
+  }
+
+  return null;
+}
 
 export default VirtualizedList;

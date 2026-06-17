@@ -100,6 +100,16 @@ pub fn generate_server_password() -> String {
         .collect()
 }
 
+/// Build the commit reminder prompt content when the feature is enabled and
+/// there are uncommitted changes to report.
+fn build_commit_reminder_prompt(enabled: bool, prompt: &str, status: &str) -> Option<String> {
+    if !enabled || status.is_empty() {
+        return None;
+    }
+
+    Some(format!("{}\n{}", prompt, status))
+}
+
 #[derive(Debug, Deserialize)]
 struct HealthResponse {
     healthy: bool,
@@ -228,6 +238,58 @@ pub async fn run_session(
     run_session_inner(config, log_writer, client, cancel).await
 }
 
+/// Send a follow-up commit reminder into the active OpenCode session when the
+/// feature is enabled and the workspace still has uncommitted changes.
+pub(super) async fn maybe_send_commit_reminder(
+    client: &reqwest::Client,
+    config: &RunConfig,
+    log_writer: &LogWriter,
+    control_rx: &mut mpsc::UnboundedReceiver<ControlEvent>,
+    cancel: CancellationToken,
+    session_id: &str,
+    model: Option<ModelSpec>,
+) {
+    if cancel.is_cancelled() {
+        return;
+    }
+
+    let status = config.repo_context.check_uncommitted_changes().await;
+    let Some(reminder_prompt) = build_commit_reminder_prompt(
+        config.commit_reminder,
+        &config.commit_reminder_prompt,
+        &status,
+    ) else {
+        return;
+    };
+
+    tracing::debug!("Sending commit reminder prompt to OpenCode session");
+
+    // Log as system message so it's visible in the UI (user_message gets filtered out)
+    let _ = log_writer
+        .log_event(&OpencodeExecutorEvent::SystemMessage {
+            content: reminder_prompt.clone(),
+        })
+        .await;
+
+    let reminder_fut = Box::pin(prompt(
+        client,
+        &config.base_url,
+        &config.directory,
+        session_id,
+        &reminder_prompt,
+        model,
+        config.model_variant.clone(),
+        config.agent.clone(),
+    ));
+    let reminder_result =
+        run_request_with_control(reminder_fut, control_rx, cancel.clone()).await;
+
+    if let Err(err) = reminder_result {
+        // Log but don't fail the session on commit reminder errors.
+        tracing::warn!("Commit reminder prompt failed: {err}");
+    }
+}
+
 pub(super) async fn discover_commands(
     server: &OpencodeServer,
     directory: &Path,
@@ -336,40 +398,16 @@ async fn run_session_inner(
         return Err(err);
     }
 
-    // Handle commit reminder if enabled
-    if config.commit_reminder
-        && !cancel.is_cancelled()
-        && let status = config.repo_context.check_uncommitted_changes().await
-        && !status.is_empty()
-    {
-        let reminder_prompt = format!("{}\n{}", config.commit_reminder_prompt, status);
-        tracing::debug!("Sending commit reminder prompt to OpenCode session");
-
-        // Log as system message so it's visible in the UI (user_message gets filtered out)
-        let _ = log_writer
-            .log_event(&OpencodeExecutorEvent::SystemMessage {
-                content: reminder_prompt.clone(),
-            })
-            .await;
-
-        let reminder_fut = Box::pin(prompt(
-            &client,
-            &config.base_url,
-            &config.directory,
-            &session_id,
-            &reminder_prompt,
-            model,
-            config.model_variant.clone(),
-            config.agent.clone(),
-        ));
-        let reminder_result =
-            run_request_with_control(reminder_fut, &mut control_rx, cancel.clone()).await;
-
-        if let Err(e) = reminder_result {
-            // Log but don't fail the session on commit reminder errors
-            tracing::warn!("Commit reminder prompt failed: {e}");
-        }
-    }
+    maybe_send_commit_reminder(
+        &client,
+        &config,
+        &log_writer,
+        &mut control_rx,
+        cancel.clone(),
+        &session_id,
+        model,
+    )
+    .await;
 
     if cancel.is_cancelled() {
         send_abort(&client, &config.base_url, &config.directory, &session_id).await;
@@ -958,7 +996,7 @@ pub async fn send_abort(
     .await;
 }
 
-fn parse_model(model: &str) -> Option<ModelSpec> {
+pub(super) fn parse_model(model: &str) -> Option<ModelSpec> {
     let (provider_id, model_id) = match model.split_once('/') {
         Some((provider, rest)) => (provider.to_string(), rest.to_string()),
         None => (model.to_string(), String::new()),
@@ -1432,6 +1470,35 @@ fn event_matches_session(event_type: &str, event: &Value, session_id: &str) -> b
     };
 
     extracted == Some(session_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_commit_reminder_prompt;
+
+    #[test]
+    fn commit_reminder_prompt_is_absent_when_disabled() {
+        assert_eq!(
+            build_commit_reminder_prompt(false, "please commit", "repo:\n M file.rs\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn commit_reminder_prompt_is_absent_when_status_is_empty() {
+        assert_eq!(
+            build_commit_reminder_prompt(true, "please commit", ""),
+            None
+        );
+    }
+
+    #[test]
+    fn commit_reminder_prompt_includes_prompt_and_status() {
+        assert_eq!(
+            build_commit_reminder_prompt(true, "please commit", "repo:\n M file.rs\n"),
+            Some("please commit\nrepo:\n M file.rs\n".to_string())
+        );
+    }
 }
 
 async fn request_permission_approval(
