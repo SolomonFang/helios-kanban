@@ -58,21 +58,21 @@
   .legacy-design.dark,
   .dark .legacy-design {
     color-scheme: dark;
-    --_background: 48 4% 16%;
-    --_foreground: 48 7% 85%;
+    --_background: 48 3% 10%;
+    --_foreground: 48 5% 88%;
     --_primary: var(--_muted);
     --_primary-foreground: var(--_muted-foreground);
-    --_secondary: var(--_muted);
-    --_secondary-foreground: 48 2% 65%;
-    --_muted: 60 2% 18%;
-    --_muted-foreground: var(--_foreground);
-    --_accent: var(--_background);
-    --_accent-foreground: 210 40% 98%;
+    --_secondary: 48 2% 14%;
+    --_secondary-foreground: 48 3% 65%;
+    --_muted: 48 2% 12%;
+    --_muted-foreground: 48 3% 65%;
+    --_accent: 48 2% 17%;
+    --_accent-foreground: 48 5% 88%;
     --_destructive: 0 45% 55%;
     --_destructive-foreground: var(--_background-foreground);
-    --_border: 60 2% 25%;
-    --_input: var(--_border);
-    --_ring: 212.7 26.8% 83.9%;
+    --_border: 48 2% 20%;
+    --_input: 48 2% 15%;
+    --_ring: 48 5% 75%;
 
     /* Status (dark) */
     --_success: 138.5 76.5% 47.7%;
@@ -81,12 +81,12 @@
     --_warning-foreground: 26 83.3% 14.1%;
     --_info: 217.2 91.2% 59.8%;
     --_info-foreground: 222.2 84% 4.9%;
-    --_neutral: 217.2 32.6% 17.5%;
-    --_neutral-foreground: 210 40% 98%;
+    --_neutral: 48 2% 14%;
+    --_neutral-foreground: 48 5% 88%;
 
     /* Console (dark) */
-    --_console-background: 0 0% 0%;
-    --_console-foreground: 210 40% 98%;
+    --_console-background: 48 3% 7%;
+    --_console-foreground: 48 5% 88%;
     --_console-success: 138.5 76.5% 47.7%;
     --_console-error: 0 84.2% 60.2%;
 
