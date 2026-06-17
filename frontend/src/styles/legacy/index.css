@@ -54,41 +54,41 @@
     --_syntax-deleted: #b31d28;
   }
 
-  /* Dark mode - handles both .legacy-design.dark and .dark .legacy-design */
+  /* Dark mode - GitHub Primer palette (github.com default dark) */
   .legacy-design.dark,
   .dark .legacy-design {
     color-scheme: dark;
-    --_background: 48 3% 10%;
-    --_foreground: 48 5% 88%;
+    --_background: 216 28% 7%; /* #0d1117 canvas.default */
+    --_foreground: 210 40% 93%; /* #e6edf3 fg.default */
     --_primary: var(--_muted);
-    --_primary-foreground: var(--_muted-foreground);
-    --_secondary: 48 2% 14%;
-    --_secondary-foreground: 48 3% 65%;
-    --_muted: 48 2% 12%;
-    --_muted-foreground: 48 3% 65%;
-    --_accent: 48 2% 17%;
-    --_accent-foreground: 48 5% 88%;
-    --_destructive: 0 45% 55%;
-    --_destructive-foreground: var(--_background-foreground);
-    --_border: 48 2% 20%;
-    --_input: 48 2% 15%;
-    --_ring: 48 5% 75%;
+    --_primary-foreground: var(--_foreground);
+    --_secondary: 215 15% 15%; /* #21262d border.muted */
+    --_secondary-foreground: 215 8% 47%; /* #6e7681 fg.subtle */
+    --_muted: 215 21% 11%; /* #161b22 canvas.subtle */
+    --_muted-foreground: 215 9% 58%; /* #8b949e fg.muted */
+    --_accent: 215 15% 15%; /* #21262d hover / elevated */
+    --_accent-foreground: 210 40% 93%;
+    --_destructive: 3 93% 63%; /* #f85149 danger.fg */
+    --_destructive-foreground: 210 40% 93%;
+    --_border: 213 12% 21%; /* #30363d border.default */
+    --_input: 216 43% 2%; /* #010409 canvas.inset */
+    --_ring: 212 92% 58%; /* #58a6ff accent.fg */
 
     /* Status (dark) */
-    --_success: 138.5 76.5% 47.7%;
-    --_success-foreground: 138.5 76.5% 96.7%;
-    --_warning: 32.2 95% 44.1%;
-    --_warning-foreground: 26 83.3% 14.1%;
-    --_info: 217.2 91.2% 59.8%;
-    --_info-foreground: 222.2 84% 4.9%;
-    --_neutral: 48 2% 14%;
-    --_neutral-foreground: 48 5% 88%;
+    --_success: 137 55% 48%; /* #3fb950 success.fg */
+    --_success-foreground: 137 55% 90%;
+    --_warning: 41 65% 47%; /* #d29922 attention.fg */
+    --_warning-foreground: 41 65% 90%;
+    --_info: 212 92% 58%; /* #58a6ff accent.fg */
+    --_info-foreground: 210 40% 93%;
+    --_neutral: 215 21% 11%;
+    --_neutral-foreground: 210 40% 93%;
 
     /* Console (dark) */
-    --_console-background: 48 3% 7%;
-    --_console-foreground: 48 5% 88%;
-    --_console-success: 138.5 76.5% 47.7%;
-    --_console-error: 0 84.2% 60.2%;
+    --_console-background: 216 43% 2%; /* #010409 */
+    --_console-foreground: 210 40% 93%;
+    --_console-success: 137 55% 48%;
+    --_console-error: 3 93% 63%;
 
     /* Syntax highlighting (dark - GitHub Dark) */
     --_syntax-keyword: #ff7b72;
@@ -192,6 +192,13 @@
     --syntax-tag: var(--_syntax-tag);
     --syntax-punctuation: var(--_syntax-punctuation);
     --syntax-deleted: var(--_syntax-deleted);
+  }
+
+  /* Dark text: keep GitHub fg.muted for helpers, fg.default for body */
+  .legacy-design.dark,
+  .dark .legacy-design {
+    --card-foreground: var(--foreground);
+    --popover-foreground: var(--foreground);
   }
 }
 

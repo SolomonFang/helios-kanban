@@ -117,7 +117,7 @@ export function Navbar() {
   const isOAuthLoggedIn = loginStatus?.status === 'loggedin';
 
   return (
-    <div className="border-b bg-background">
+    <div className="border-b bg-background dark:bg-input">
       <div className="w-full px-3">
         <div className="flex items-center h-12 py-2">
           <div className="flex-1 flex items-center">
@@ -141,7 +141,7 @@ export function Navbar() {
                 value={iteration ?? '__all__'}
                 onValueChange={(v) => setIteration(v === '__all__' ? null : v)}
               >
-                <SelectTrigger className="h-8 w-44 bg-muted">
+                <SelectTrigger className="h-8 w-44 bg-muted dark:bg-input dark:border-border">
                   <SelectValue placeholder={t('tasks:filters.allIterations')} />
                 </SelectTrigger>
                 <SelectContent>
