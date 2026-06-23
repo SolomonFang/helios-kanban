@@ -154,7 +154,6 @@ async fn spawn_reasonix(
 /// PTY master and bridged into tokio channels for the MsgStore pipeline.
 async fn spawn_reasonix_pty(
     command_parts: CommandParts,
-    prompt: &str,
     current_dir: &Path,
     env: &ExecutionEnv,
     cmd_overrides: &CmdOverrides,
@@ -184,22 +183,6 @@ async fn spawn_reasonix_pty(
         .slave
         .spawn_command(cmd)
         .map_err(|e| ExecutorError::Io(io::Error::other(e.to_string())))?;
-
-    // Write the prompt to the PTY master — reasonix (Bubble Tea) reads from
-    // /dev/tty which is the PTY slave.
-    {
-        let mut writer = pty_pair
-            .master
-            .take_writer()
-            .map_err(|e| ExecutorError::Io(io::Error::other(e.to_string())))?;
-        writer
-            .write_all(prompt.as_bytes())
-            .map_err(|e| ExecutorError::Io(e))?;
-        writer
-            .write_all(b"\r\n")
-            .map_err(|e| ExecutorError::Io(e))?;
-        writer.flush().map_err(|e| ExecutorError::Io(e))?;
-    }
 
     // Bridge PTY output → tokio mpsc channel
     let (stdout_tx, stdout_rx) = tokio::sync::mpsc::unbounded_channel::<io::Result<Vec<u8>>>();
@@ -253,9 +236,12 @@ impl StandardCodingAgentExecutor for Reasonix {
         let combined_prompt = self.append_prompt.combine_prompt(prompt);
 
         if self.use_code_mode.unwrap_or(false) {
-            // code mode: spawn via portable-pty with prompt written to PTY master
-            let command = self.build_command_builder(false)?.build_initial()?;
-            spawn_reasonix_pty(command, &combined_prompt, current_dir, env, &self.cmd).await
+            // code mode: prompt is a positional argument; spawn via portable-pty for /dev/tty access
+            let command = self
+                .build_command_builder(false)?
+                .extend_params([&combined_prompt])
+                .build_initial()?;
+            spawn_reasonix_pty(command, current_dir, env, &self.cmd).await
         } else {
             // run mode: prompt is a positional argument
             let command = self
