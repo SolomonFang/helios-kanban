@@ -5,6 +5,7 @@ use workspace_utils::approvals::{ApprovalStatus, QuestionStatus};
 
 pub mod plain_text_processor;
 pub mod stderr_processor;
+pub mod stdout_processor;
 pub mod utils;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

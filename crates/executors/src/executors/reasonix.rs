@@ -19,7 +19,7 @@ use crate::{
     executors::{
         AppendPrompt, AvailabilityInfo, ExecutorError, SpawnedChild, StandardCodingAgentExecutor,
     },
-    logs::stderr_processor::normalize_stderr_logs,
+    logs::stdout_processor::normalize_stdout_logs,
     logs::utils::EntryIndexProvider,
 };
 
@@ -27,7 +27,7 @@ fn base_command(native_binary: bool) -> &'static str {
     if native_binary {
         "reasonix"
     } else {
-        "npx reasonix code"
+        "npx -y reasonix@latest"
     }
 }
 
@@ -181,7 +181,7 @@ impl StandardCodingAgentExecutor for Reasonix {
 
     fn normalize_logs(&self, msg_store: Arc<MsgStore>, _worktree_path: &Path) {
         let entry_index_provider = EntryIndexProvider::start_from(&msg_store);
-        normalize_stderr_logs(msg_store, entry_index_provider);
+        normalize_stdout_logs(msg_store, entry_index_provider);
     }
 
     fn default_mcp_config_path(&self) -> Option<PathBuf> {
