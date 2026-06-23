@@ -51,7 +51,7 @@ use crate::{
     env::ExecutionEnv,
     executors::{
         AppendPrompt, AvailabilityInfo, ExecutorError, ExecutorExitResult, SlashCommandDescription,
-        SpawnedChild, StandardCodingAgentExecutor,
+        SpawnedChild, StandardCodingAgentExecutor, ChildHandle,
     },
     logs::utils::patch,
     stdout_dup::create_stdout_pipe_writer,
@@ -554,7 +554,7 @@ impl Codex {
         });
 
         Ok(SpawnedChild {
-            child,
+            child: ChildHandle::Group(child),
             exit_signal: Some(exit_signal_rx),
             cancel: Some(cancel),
         })

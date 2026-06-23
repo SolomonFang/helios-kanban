@@ -1,4 +1,5 @@
 use std::{
+    io,
     path::{Path, PathBuf},
     process::Stdio,
     sync::Arc,
@@ -6,6 +7,7 @@ use std::{
 
 use async_trait::async_trait;
 use command_group::AsyncCommandGroup;
+use portable_pty::PtySystem;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::{io::AsyncWriteExt, process::Command};
@@ -17,7 +19,8 @@ use crate::{
     command::{CmdOverrides, CommandBuildError, CommandBuilder, CommandParts, apply_overrides},
     env::ExecutionEnv,
     executors::{
-        AppendPrompt, AvailabilityInfo, ExecutorError, SpawnedChild, StandardCodingAgentExecutor,
+        AppendPrompt, AvailabilityInfo, ChildHandle, ExecutorError, SpawnedChild,
+        StandardCodingAgentExecutor,
     },
     logs::stdout_processor::normalize_stdout_logs,
     logs::utils::EntryIndexProvider,
@@ -78,7 +81,8 @@ pub struct Reasonix {
 }
 
 impl Reasonix {
-    fn build_command_builder(&self) -> Result<CommandBuilder, CommandBuildError> {
+    /// Build the command, optionally wrapping with `script -q /dev/null` for PTY.
+    fn build_command_builder(&self, wrap_script: bool) -> Result<CommandBuilder, CommandBuildError> {
         let native = detect_reasonix_binary();
         let base = base_command(native);
         let subcommand = if self.use_code_mode.unwrap_or(false) {
@@ -86,11 +90,12 @@ impl Reasonix {
         } else {
             "run"
         };
-        // Wrap with `script` to provide a PTY — reasonix uses Bubble Tea (Go TUI)
-        // which opens /dev/tty directly. `script -q` creates a PTY and suppresses
-        // start/done banners.
         #[cfg(not(windows))]
-        let cmd = format!("script -q /dev/null {base} {subcommand}");
+        let cmd = if wrap_script {
+            format!("script -q /dev/null {base} {subcommand}")
+        } else {
+            format!("{base} {subcommand}")
+        };
         #[cfg(windows)]
         let cmd = format!("{base} {subcommand}");
         let mut builder = CommandBuilder::new(cmd);
@@ -144,6 +149,99 @@ async fn spawn_reasonix(
     Ok(child.into())
 }
 
+/// Spawn reasonix in a native PTY (portable-pty), writing the prompt to the
+/// PTY master so that it appears as terminal input.  Output is read from the
+/// PTY master and bridged into tokio channels for the MsgStore pipeline.
+async fn spawn_reasonix_pty(
+    command_parts: CommandParts,
+    prompt: &str,
+    current_dir: &Path,
+    env: &ExecutionEnv,
+    cmd_overrides: &CmdOverrides,
+) -> Result<SpawnedChild, ExecutorError> {
+    let (program_path, args) = command_parts.into_resolved().await?;
+
+    let pty_system = portable_pty::NativePtySystem::default();
+    let pty_pair = pty_system
+        .openpty(portable_pty::PtySize {
+            rows: 24,
+            cols: 120,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| ExecutorError::Io(io::Error::other(e.to_string())))?;
+
+    let mut cmd = portable_pty::CommandBuilder::new(&program_path);
+    cmd.args(&args);
+    cmd.cwd(current_dir);
+
+    let merged_env = env.clone().with_profile(cmd_overrides);
+    for (key, value) in &merged_env.vars {
+        cmd.env(key, value);
+    }
+
+    let child = pty_pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| ExecutorError::Io(io::Error::other(e.to_string())))?;
+
+    // Write the prompt to the PTY master — reasonix (Bubble Tea) reads from
+    // /dev/tty which is the PTY slave.
+    {
+        let mut writer = pty_pair
+            .master
+            .take_writer()
+            .map_err(|e| ExecutorError::Io(io::Error::other(e.to_string())))?;
+        writer
+            .write_all(prompt.as_bytes())
+            .map_err(|e| ExecutorError::Io(e))?;
+        writer
+            .write_all(b"\r\n")
+            .map_err(|e| ExecutorError::Io(e))?;
+        writer.flush().map_err(|e| ExecutorError::Io(e))?;
+    }
+
+    // Bridge PTY output → tokio mpsc channel
+    let (stdout_tx, stdout_rx) = tokio::sync::mpsc::unbounded_channel::<io::Result<Vec<u8>>>();
+    let (_stderr_tx, stderr_rx) = tokio::sync::mpsc::unbounded_channel::<io::Result<Vec<u8>>>();
+    drop(_stderr_tx); // PTY merges stdout+stderr; stderr channel stays empty
+
+    let mut reader = pty_pair
+        .master
+        .try_clone_reader()
+        .map_err(|e| ExecutorError::Io(io::Error::other(e.to_string())))?;
+
+    let master = pty_pair.master;
+    std::thread::spawn(move || {
+        let _master = master; // keep PTY master alive while reading
+        let mut buf = [0u8; 4096];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => break, // EOF
+                Ok(n) => {
+                    if stdout_tx.send(Ok(buf[..n].to_vec())).is_err() {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    let _ = stdout_tx.send(Err(e));
+                    break;
+                }
+            }
+        }
+    });
+
+    Ok(SpawnedChild {
+        child: ChildHandle::Pty {
+            child,
+            stdout_rx,
+            stderr_rx,
+        },
+        exit_signal: None,
+        cancel: None,
+    })
+}
+
 #[async_trait]
 impl StandardCodingAgentExecutor for Reasonix {
     async fn spawn(
@@ -155,13 +253,13 @@ impl StandardCodingAgentExecutor for Reasonix {
         let combined_prompt = self.append_prompt.combine_prompt(prompt);
 
         if self.use_code_mode.unwrap_or(false) {
-            // code mode: prompt goes via stdin to the PTY
-            let command = self.build_command_builder()?.build_initial()?;
-            spawn_reasonix(command, Some(&combined_prompt), current_dir, env, &self.cmd).await
+            // code mode: spawn via portable-pty with prompt written to PTY master
+            let command = self.build_command_builder(false)?.build_initial()?;
+            spawn_reasonix_pty(command, &combined_prompt, current_dir, env, &self.cmd).await
         } else {
             // run mode: prompt is a positional argument
             let command = self
-                .build_command_builder()?
+                .build_command_builder(true)?
                 .extend_params([combined_prompt])
                 .build_initial()?;
             spawn_reasonix(command, None, current_dir, env, &self.cmd).await

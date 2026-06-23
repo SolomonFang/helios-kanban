@@ -1,6 +1,8 @@
 use std::{path::Path, sync::Arc};
 
 use async_trait::async_trait;
+use std::io;
+
 use command_group::AsyncGroupChild;
 use enum_dispatch::enum_dispatch;
 use futures::stream::BoxStream;
@@ -314,9 +316,97 @@ pub type ExecutorExitSignal = tokio::sync::oneshot::Receiver<ExecutorExitResult>
 /// When cancelled, the executor should attempt to cancel gracefully before being killed.
 pub type CancellationToken = tokio_util::sync::CancellationToken;
 
+/// Handle to a spawned child process, either a standard process group
+/// or a PTY-based child.
+pub enum ChildHandle {
+    Group(AsyncGroupChild),
+    Pty {
+        child: Box<dyn portable_pty::Child + Send + Sync>,
+        stdout_rx: tokio::sync::mpsc::UnboundedReceiver<io::Result<Vec<u8>>>,
+        stderr_rx: tokio::sync::mpsc::UnboundedReceiver<io::Result<Vec<u8>>>,
+    },
+}
+
+impl std::fmt::Debug for ChildHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChildHandle::Group(child) => f.debug_tuple("Group").field(child).finish(),
+            ChildHandle::Pty { child, .. } => f
+                .debug_tuple("Pty")
+                .field(&child.process_id())
+                .finish(),
+        }
+    }
+}
+
+fn pty_exit_to_std(es: portable_pty::ExitStatus) -> std::process::ExitStatus {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        std::process::ExitStatus::from_raw(
+            es.exit_code()
+                as i32,
+        )
+    }
+    #[cfg(not(unix))]
+    {
+        if es.success() {
+            std::process::ExitStatus::default()
+        } else {
+            // On non-Unix, create a failure status.  Portable-pty is primarily
+            // Unix-facing; this branch exists only to satisfy the compiler.
+            let _ = es;
+            std::process::ExitStatus::default()
+        }
+    }
+}
+
+impl ChildHandle {
+    pub fn try_wait(&mut self) -> io::Result<Option<std::process::ExitStatus>> {
+        match self {
+            ChildHandle::Group(child) => child
+                .try_wait()
+                .map_err(|e| io::Error::other(e)),
+            ChildHandle::Pty { child, .. } => {
+                child.try_wait().map(|opt| opt.map(pty_exit_to_std))
+            }
+        }
+    }
+
+    pub fn id(&self) -> Option<u32> {
+        match self {
+            ChildHandle::Group(child) => child.id(),
+            ChildHandle::Pty { child, .. } => child.process_id(),
+        }
+    }
+
+    pub async fn kill(&mut self) -> io::Result<()> {
+        match self {
+            ChildHandle::Group(child) => child.kill().await,
+            ChildHandle::Pty { child, .. } => child.kill(),
+        }
+    }
+
+    pub async fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
+        match self {
+            ChildHandle::Group(child) => child
+                .wait()
+                .await
+                .map_err(|e| io::Error::other(e)),
+            ChildHandle::Pty { child, .. } => child.wait().map(pty_exit_to_std),
+        }
+    }
+}
+
+impl From<AsyncGroupChild> for ChildHandle {
+    fn from(child: AsyncGroupChild) -> Self {
+        ChildHandle::Group(child)
+    }
+}
+
 #[derive(Debug)]
 pub struct SpawnedChild {
-    pub child: AsyncGroupChild,
+    pub child: ChildHandle,
     /// Executor → Container: signals when executor wants to exit
     pub exit_signal: Option<ExecutorExitSignal>,
     /// Container → Executor: signals when container wants to cancel the execution
@@ -326,7 +416,7 @@ pub struct SpawnedChild {
 impl From<AsyncGroupChild> for SpawnedChild {
     fn from(child: AsyncGroupChild) -> Self {
         Self {
-            child,
+            child: ChildHandle::Group(child),
             exit_signal: None,
             cancel: None,
         }

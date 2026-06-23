@@ -14,7 +14,7 @@ use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_util::io::ReaderStream;
 
-use crate::executors::{ExecutorError, SpawnedChild};
+use crate::executors::{ChildHandle, ExecutorError, SpawnedChild};
 
 /// Duplicate stdout from AsyncGroupChild.
 ///
@@ -227,7 +227,7 @@ pub fn spawn_local_output_process()
     let writer = wrap_fd_as_tokio_writer(pipe_writer)?;
 
     let spawned = SpawnedChild {
-        child,
+        child: ChildHandle::Group(child),
         exit_signal: None,
         cancel: None,
     };

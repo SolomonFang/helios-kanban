@@ -23,7 +23,7 @@ use crate::{
     approvals::ExecutorApprovalService,
     command::{CmdOverrides, CommandParts},
     env::ExecutionEnv,
-    executors::{ExecutorError, ExecutorExitResult, SpawnedChild, acp::AcpEvent},
+    executors::{ExecutorError, ExecutorExitResult, SpawnedChild, ChildHandle, acp::AcpEvent},
 };
 
 /// Reusable harness for ACP-based conns (Gemini, Qwen, etc.)
@@ -114,7 +114,7 @@ impl AcpAgentHarness {
         .await?;
 
         Ok(SpawnedChild {
-            child,
+            child: ChildHandle::Group(child),
             exit_signal: Some(exit_rx),
             cancel: Some(cancel),
         })
@@ -167,7 +167,7 @@ impl AcpAgentHarness {
         .await?;
 
         Ok(SpawnedChild {
-            child,
+            child: ChildHandle::Group(child),
             exit_signal: Some(exit_rx),
             cancel: Some(cancel),
         })

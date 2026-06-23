@@ -38,6 +38,7 @@ use crate::{
     env::ExecutionEnv,
     executors::{
         AppendPrompt, AvailabilityInfo, ExecutorError, SpawnedChild, StandardCodingAgentExecutor,
+        ChildHandle,
         codex::client::LogWriter, utils::reorder_slash_commands,
     },
     logs::{
@@ -443,7 +444,7 @@ impl ClaudeCode {
         });
 
         Ok(SpawnedChild {
-            child,
+            child: ChildHandle::Group(child),
             exit_signal: None,
             cancel: Some(cancel),
         })

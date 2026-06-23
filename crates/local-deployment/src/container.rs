@@ -8,7 +8,6 @@ use std::{
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use command_group::AsyncGroupChild;
 use db::{
     DBService,
     models::{
@@ -34,10 +33,10 @@ use executors::{
     },
     approvals::{ExecutorApprovalService, NoopExecutorApprovalService},
     env::{ExecutionEnv, RepoContext},
-    executors::{BaseCodingAgent, CancellationToken, ExecutorExitResult, ExecutorExitSignal},
+    executors::{BaseCodingAgent, CancellationToken, ChildHandle, ExecutorExitResult, ExecutorExitSignal},
     logs::{NormalizedEntryType, utils::patch::extract_normalized_entry_from_patch},
 };
-use futures::{FutureExt, TryStreamExt, stream::select};
+use futures::{FutureExt, StreamExt, TryStreamExt, stream::select};
 use git::GitService;
 use serde_json::json;
 use services::services::{
@@ -67,7 +66,7 @@ use crate::{command, copy};
 #[derive(Clone)]
 pub struct LocalContainerService {
     db: DBService,
-    child_store: Arc<RwLock<HashMap<Uuid, Arc<RwLock<AsyncGroupChild>>>>>,
+    child_store: Arc<RwLock<HashMap<Uuid, Arc<RwLock<ChildHandle>>>>>,
     cancellation_tokens: Arc<RwLock<HashMap<Uuid, CancellationToken>>>,
     msg_stores: Arc<RwLock<HashMap<Uuid, Arc<MsgStore>>>>,
     /// Tracks background tasks that stream logs to the database.
@@ -125,12 +124,12 @@ impl LocalContainerService {
         container
     }
 
-    pub async fn get_child_from_store(&self, id: &Uuid) -> Option<Arc<RwLock<AsyncGroupChild>>> {
+    pub async fn get_child_from_store(&self, id: &Uuid) -> Option<Arc<RwLock<ChildHandle>>> {
         let map = self.child_store.read().await;
         map.get(id).cloned()
     }
 
-    pub async fn add_child_to_store(&self, id: Uuid, exec: AsyncGroupChild) {
+    pub async fn add_child_to_store(&self, id: Uuid, exec: ChildHandle) {
         let mut map = self.child_store.write().await;
         map.insert(id, Arc::new(RwLock::new(exec)));
     }
@@ -709,21 +708,47 @@ impl LocalContainerService {
         format!("{}-{}", short_uuid(workspace_id), task_title_id)
     }
 
-    async fn track_child_msgs_in_store(&self, id: Uuid, child: &mut AsyncGroupChild) {
+    async fn track_child_msgs_in_store(&self, id: Uuid, child: &mut ChildHandle) {
         let store = Arc::new(MsgStore::new());
 
-        let out = child.inner().stdout.take().expect("no stdout");
-        let err = child.inner().stderr.take().expect("no stderr");
-
-        // Map stdout bytes -> LogMsg::Stdout
-        let out = ReaderStream::new(out)
-            .map_ok(|chunk| LogMsg::Stdout(String::from_utf8_lossy(&chunk).into_owned()));
-
-        // Map stderr bytes -> LogMsg::Stderr
-        let err = ReaderStream::new(err)
-            .map_ok(|chunk| LogMsg::Stderr(String::from_utf8_lossy(&chunk).into_owned()));
-
-        // If you have a JSON Patch source, map it to LogMsg::JsonPatch too, then select all three.
+        let (out, err) = match child {
+            ChildHandle::Group(child) => {
+                let out = child.inner().stdout.take().expect("no stdout");
+                let err = child.inner().stderr.take().expect("no stderr");
+                let out = ReaderStream::new(out)
+                    .map_ok(|chunk| LogMsg::Stdout(String::from_utf8_lossy(&chunk).into_owned()))
+                    .boxed();
+                let err = ReaderStream::new(err)
+                    .map_ok(|chunk| LogMsg::Stderr(String::from_utf8_lossy(&chunk).into_owned()))
+                    .boxed();
+                (out, err)
+            }
+            ChildHandle::Pty {
+                stdout_rx, stderr_rx, ..
+            } => {
+                let stdout_rx =
+                    std::mem::replace(stdout_rx, tokio::sync::mpsc::unbounded_channel().1);
+                let stderr_rx =
+                    std::mem::replace(stderr_rx, tokio::sync::mpsc::unbounded_channel().1);
+                let out = futures::stream::unfold(stdout_rx, |mut rx| async move {
+                    rx.recv().await.map(|item| (item, rx))
+                })
+                .map(|item| match item {
+                    Ok(chunk) => Ok(LogMsg::Stdout(String::from_utf8_lossy(&chunk).into_owned())),
+                    Err(e) => Err(e),
+                })
+                .boxed();
+                let err = futures::stream::unfold(stderr_rx, |mut rx| async move {
+                    rx.recv().await.map(|item| (item, rx))
+                })
+                .map(|item| match item {
+                    Ok(chunk) => Ok(LogMsg::Stderr(String::from_utf8_lossy(&chunk).into_owned())),
+                    Err(e) => Err(e),
+                })
+                .boxed();
+                (out, err)
+            }
+        };
 
         // Merge and forward into the store
         let merged = select(out, err); // Stream<Item = Result<LogMsg, io::Error>>

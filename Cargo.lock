@@ -2306,6 +2306,7 @@ dependencies = [
  "jsonc-parser",
  "lru 0.12.5",
  "os_pipe",
+ "portable-pty 0.8.1",
  "rand 0.8.5",
  "regex",
  "reqwest",
