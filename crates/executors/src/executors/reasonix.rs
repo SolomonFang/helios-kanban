@@ -134,7 +134,10 @@ async fn spawn_reasonix(
     if let Some(prompt_text) = prompt {
         if let Some(mut stdin) = child.inner().stdin.take() {
             stdin.write_all(prompt_text.as_bytes()).await?;
-            stdin.shutdown().await?;
+            stdin.write_all(b"\n").await?;
+            stdin.flush().await?;
+            // Don't shutdown — keep stdin open so reasonix can continue
+            // reading from the PTY during its session
         }
     }
 
