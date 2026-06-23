@@ -27,7 +27,7 @@ fn base_command(native_binary: bool) -> &'static str {
     if native_binary {
         "reasonix"
     } else {
-        "npx -y reasonix@latest"
+        "npx reasonix code"
     }
 }
 
@@ -86,7 +86,14 @@ impl Reasonix {
         } else {
             "run"
         };
-        let mut builder = CommandBuilder::new(format!("{base} {subcommand}"));
+        // Wrap with `script` to provide a PTY — reasonix uses Bubble Tea (Go TUI)
+        // which opens /dev/tty directly. `script -q` creates a PTY and suppresses
+        // start/done banners.
+        #[cfg(not(windows))]
+        let cmd = format!("script -q /dev/null {base} {subcommand}");
+        #[cfg(windows)]
+        let cmd = format!("{base} {subcommand}");
+        let mut builder = CommandBuilder::new(cmd);
 
         if let Some(model) = &self.model {
             builder = builder.extend_params(["--model", model.as_str()]);
