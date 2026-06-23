@@ -22,7 +22,7 @@ use crate::{
     env::ExecutionEnv,
     executors::{
         amp::Amp, claude::ClaudeCode, codex::Codex, copilot::Copilot, cursor::CursorAgent,
-        droid::Droid, gemini::Gemini, opencode::Opencode, qwen::QwenCode,
+        droid::Droid, gemini::Gemini, opencode::Opencode, qwen::QwenCode, reasonix::Reasonix,
     },
     logs::utils::patch,
     mcp_config::McpConfig,
@@ -40,6 +40,7 @@ pub mod opencode;
 #[cfg(feature = "qa-mode")]
 pub mod qa_mock;
 pub mod qwen;
+pub mod reasonix;
 pub mod utils;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
@@ -117,6 +118,7 @@ pub enum CodingAgent {
     QwenCode,
     Copilot,
     Droid,
+    Reasonix,
     #[cfg(feature = "qa-mode")]
     QaMock(QaMockExecutor),
 }
@@ -150,6 +152,14 @@ impl CodingAgent {
                 false,
             ),
             Self::Droid(_) => McpConfig::new(
+                vec!["mcpServers".to_string()],
+                serde_json::json!({
+                    "mcpServers": {}
+                }),
+                self.preconfigured_mcp(),
+                false,
+            ),
+            Self::Reasonix(_) => McpConfig::new(
                 vec!["mcpServers".to_string()],
                 serde_json::json!({
                     "mcpServers": {}
@@ -191,7 +201,7 @@ impl CodingAgent {
                 vec![BaseAgentCapability::SessionFork]
             }
             Self::CursorAgent(_) => vec![BaseAgentCapability::SetupHelper],
-            Self::Copilot(_) | Self::Droid(_) => vec![],
+            Self::Copilot(_) | Self::Droid(_) | Self::Reasonix(_) => vec![],
             #[cfg(feature = "qa-mode")]
             Self::QaMock(_) => vec![], // QA mock doesn't need special capabilities
         }

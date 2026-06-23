@@ -1,0 +1,70 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "append_prompt": {
+      "title": "Append Prompt",
+      "description": "Extra text appended to the prompt",
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "textarea",
+      "default": null
+    },
+    "model": {
+      "title": "Model",
+      "description": "Model to use: \"deepseek-v4-flash\" (default), \"deepseek-v4-pro\", or \"mimo-pro\"",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "dangerously_skip_permissions": {
+      "title": "Dangerously Skip Permissions (YOLO)",
+      "description": "Skip tool-approval prompts (--yolo flag)",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "use_code_mode": {
+      "title": "Use Code Mode",
+      "description": "Use \"reasonix code\" (with filesystem tools) instead of \"reasonix run\" (chat-only one-shot)",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "base_command_override": {
+      "title": "Base Command Override",
+      "description": "Override the base command with a custom command",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "additional_params": {
+      "title": "Additional Parameters",
+      "description": "Additional parameters to append to the base command",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "env": {
+      "title": "Environment Variables",
+      "description": "Environment variables to set when running the executor",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "type": "object"
+}

@@ -286,6 +286,28 @@
         }
       }
     },
+    "REASONIX": {
+      "DEFAULT": {
+        "REASONIX": {
+          "dangerously_skip_permissions": true
+        }
+      },
+      "PRO": {
+        "REASONIX": {
+          "model": "deepseek-v4-pro",
+          "dangerously_skip_permissions": true
+        }
+      },
+      "CODE_MODE": {
+        "REASONIX": {
+          "use_code_mode": true,
+          "dangerously_skip_permissions": true
+        }
+      },
+      "APPROVALS": {
+        "REASONIX": {}
+      }
+    },
     "DROID": {
       "DEFAULT": {
         "DROID": {
