@@ -150,20 +150,12 @@ impl StandardCodingAgentExecutor for Reasonix {
         env: &ExecutionEnv,
     ) -> Result<SpawnedChild, ExecutorError> {
         let combined_prompt = self.append_prompt.combine_prompt(prompt);
-        let is_code_mode = self.use_code_mode.unwrap_or(false);
 
-        if is_code_mode {
-            // code mode: prompt goes via stdin, no positional arg
-            let command = self.build_command_builder()?.build_initial()?;
-            spawn_reasonix(command, Some(&combined_prompt), current_dir, env, &self.cmd).await
-        } else {
-            // run mode: prompt is a positional argument
-            let command = self
-                .build_command_builder()?
-                .extend_params([combined_prompt])
-                .build_initial()?;
-            spawn_reasonix(command, None, current_dir, env, &self.cmd).await
-        }
+        let command = self
+            .build_command_builder()?
+            .extend_params([combined_prompt])
+            .build_initial()?;
+        spawn_reasonix(command, None, current_dir, env, &self.cmd).await
     }
 
     async fn spawn_follow_up(

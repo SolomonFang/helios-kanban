@@ -10,7 +10,7 @@ use futures::StreamExt;
 use workspace_utils::msg_store::MsgStore;
 
 use super::{
-    NormalizedEntry, NormalizedEntryError, NormalizedEntryType,
+    NormalizedEntry, NormalizedEntryType,
     plain_text_processor::PlainTextLogProcessor,
 };
 use crate::logs::utils::EntryIndexProvider;
@@ -22,9 +22,7 @@ pub fn normalize_stdout_logs(msg_store: Arc<MsgStore>, entry_index_provider: Ent
         let mut processor = PlainTextLogProcessor::builder()
             .normalized_entry_producer(Box::new(|content: String| NormalizedEntry {
                 timestamp: None,
-                entry_type: NormalizedEntryType::ErrorMessage {
-                    error_type: NormalizedEntryError::Other,
-                },
+                entry_type: NormalizedEntryType::AssistantMessage,
                 // PTY output via `script` uses \r\n; strip \r
                 content: strip_ansi_escapes::strip_str(&content.replace('\r', "")),
                 metadata: None,

@@ -160,7 +160,7 @@ async function main() {
         if (latest && latest !== CLI_VERSION) {
           setTimeout(() => {
             console.log(`\nUpdate available: ${CLI_VERSION} -> ${latest}`);
-            console.log(`Run: npx vibe-kanban@latest`);
+            console.log(`Run: npx helios-kanban@latest`);
           }, 2000);
         }
       })
