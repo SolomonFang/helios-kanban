@@ -92,7 +92,7 @@ impl Reasonix {
             builder = builder.extend_params(["--model", model.as_str()]);
         }
 
-        if self.dangerously_skip_permissions.unwrap_or(false) {
+        if self.dangerously_skip_permissions.unwrap_or(false) && self.use_code_mode.unwrap_or(false) {
             builder = builder.extend_params(["--yolo"]);
         }
 
