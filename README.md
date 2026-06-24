@@ -10,7 +10,7 @@
 
 <p align="center">Get 10X more out of Claude Code, Gemini CLI, Codex, Amp and other coding agents...</p>
 <p align="center">
-  <a href="https://www.npmjs.com/package/vibe-kanban"><img alt="npm" src="https://img.shields.io/npm/v/vibe-kanban?style=flat-square" /></a>
+  <a href="https://www.npmjs.com/package/helios-kanban"><img alt="npm" src="https://img.shields.io/npm/v/helios-kanban?style=flat-square" /></a>
   <a href="https://github.com/BloopAI/vibe-kanban/blob/main/.github/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/BloopAI/vibe-kanban/.github%2Fworkflows%2Fpublish.yml" /></a>
   <a href="https://deepwiki.com/BloopAI/vibe-kanban"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
 </p>
@@ -20,6 +20,10 @@
 </h1>
 
 ![](frontend/public/vibe-kanban-screenshot-overview.png)
+
+## Fork
+
+This repository is a fork of [BloopAI/vibe-kanban](https://github.com/BloopAI/vibe-kanban). The npm package is published as [`helios-kanban`](https://www.npmjs.com/package/helios-kanban).
 
 ## Overview
 
@@ -39,7 +43,13 @@ You can watch a video overview [here](https://youtu.be/TFT3KnZOOAk).
 Make sure you have authenticated with your favourite coding agent. A full list of supported coding agents can be found in the [docs](https://vibekanban.com/docs). Then in your terminal run:
 
 ```bash
-npx vibe-kanban
+npx helios-kanban
+```
+
+For production, pin the port (avoid `PORT=0`, which assigns a random port):
+
+```bash
+PORT=7964 npx helios-kanban
 ```
 
 ## Documentation
@@ -79,7 +89,7 @@ pnpm i
 pnpm run dev
 ```
 
-This will start the backend. A blank DB will be copied from the `dev_assets_seed` folder.
+This will start the frontend and backend. A blank DB will be copied from the `dev_assets_seed` folder.
 
 ### Building the frontend
 

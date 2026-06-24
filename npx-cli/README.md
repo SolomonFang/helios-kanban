@@ -1,13 +1,23 @@
-# Vibe Kanban
+# Helios Kanban
 
 > A visual project management tool for developers that integrates with git repositories and coding agents like Claude Code and Amp.
 
+## Fork
+
+This package is published as [`helios-kanban`](https://www.npmjs.com/package/helios-kanban) and is a fork of [BloopAI/vibe-kanban](https://github.com/BloopAI/vibe-kanban).
+
 ## Quick Start
 
-Run vibe kanban instantly without installation:
+Run Helios Kanban instantly without installation:
 
 ```bash
-npx vibe-kanban
+npx helios-kanban
+```
+
+For production, pin the port (avoid `PORT=0`, which assigns a random port):
+
+```bash
+PORT=7964 npx helios-kanban
 ```
 
 This will launch the application locally and open it in your browser automatically.
@@ -153,7 +163,7 @@ Vibe Kanban supports customization through its configuration system:
 **Ready to supercharge your development workflow?**
 
 ```bash
-npx vibe-kanban
+npx helios-kanban
 ```
 
 *Start managing your projects with the power of AI coding agents today!*
