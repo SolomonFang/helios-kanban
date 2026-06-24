@@ -1,5 +1,4 @@
 use std::{
-    io,
     path::{Path, PathBuf},
     process::Stdio,
     sync::Arc,
@@ -7,24 +6,26 @@ use std::{
 
 use async_trait::async_trait;
 use command_group::AsyncCommandGroup;
-use portable_pty::PtySystem;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::{io::AsyncWriteExt, process::Command};
 use ts_rs::TS;
 use workspace_utils::msg_store::MsgStore;
 
+pub use super::acp::AcpAgentHarness;
 use crate::{
     approvals::ExecutorApprovalService,
     command::{CmdOverrides, CommandBuildError, CommandBuilder, CommandParts, apply_overrides},
     env::ExecutionEnv,
     executors::{
-        AppendPrompt, AvailabilityInfo, ChildHandle, ExecutorError, SpawnedChild,
-        StandardCodingAgentExecutor,
+        AppendPrompt, AvailabilityInfo, ExecutorError, SpawnedChild, StandardCodingAgentExecutor,
     },
     logs::stdout_processor::normalize_stdout_logs,
     logs::utils::EntryIndexProvider,
 };
+
+/// Session namespace used by the ACP harness to persist reasonix sessions.
+const REASONIX_SESSION_NAMESPACE: &str = "reasonix_sessions";
 
 fn base_command(native_binary: bool) -> &'static str {
     if native_binary {
@@ -81,34 +82,64 @@ pub struct Reasonix {
 }
 
 impl Reasonix {
-    /// Build the command, optionally wrapping with `script -q /dev/null` for PTY.
-    fn build_command_builder(&self, wrap_script: bool) -> Result<CommandBuilder, CommandBuildError> {
+    fn is_code_mode(&self) -> bool {
+        self.use_code_mode.unwrap_or(false)
+    }
+
+    /// Build the one-shot `reasonix run` command, wrapping with
+    /// `script -q /dev/null` so the agent gets a PTY for its file tools.
+    fn build_run_command_builder(
+        &self,
+        wrap_script: bool,
+    ) -> Result<CommandBuilder, CommandBuildError> {
         let native = detect_reasonix_binary();
         let base = base_command(native);
-        let subcommand = if self.use_code_mode.unwrap_or(false) {
-            "code"
-        } else {
-            "run"
-        };
         #[cfg(not(windows))]
         let cmd = if wrap_script {
-            format!("script -q /dev/null {base} {subcommand}")
+            format!("script -q /dev/null {base} run")
         } else {
-            format!("{base} {subcommand}")
+            format!("{base} run")
         };
         #[cfg(windows)]
-        let cmd = format!("{base} {subcommand}");
+        let cmd = format!("{base} run");
         let mut builder = CommandBuilder::new(cmd);
 
         if let Some(model) = &self.model {
             builder = builder.extend_params(["--model", model.as_str()]);
         }
 
-        if self.dangerously_skip_permissions.unwrap_or(false) && self.use_code_mode.unwrap_or(false) {
-            builder = builder.extend_params(["--yolo"]);
-        }
-
         apply_overrides(builder, &self.cmd)
+    }
+
+    /// Build the `reasonix acp` command used for the interactive (code) mode.
+    ///
+    /// reasonix speaks the Agent Client Protocol over stdio, which lets the
+    /// shared ACP harness drive the session, detect turn completion (so the
+    /// process is reaped instead of hanging in a perpetual "loading" state),
+    /// stream structured logs and support follow-ups / session resume.
+    fn build_acp_command_builder(&self) -> Result<CommandBuilder, CommandBuildError> {
+        let native = detect_reasonix_binary();
+        let base = base_command(native);
+        let builder = CommandBuilder::new(format!("{base} acp"));
+        apply_overrides(builder, &self.cmd)
+    }
+
+    /// Approvals to hand to the ACP harness. When the user opts into YOLO we
+    /// pass `None`, which makes the ACP client auto-approve every tool call.
+    fn acp_approvals(&self) -> Option<Arc<dyn ExecutorApprovalService>> {
+        if self.dangerously_skip_permissions.unwrap_or(false) {
+            None
+        } else {
+            self.approvals_service.clone()
+        }
+    }
+
+    fn acp_harness(&self) -> AcpAgentHarness {
+        let mut harness = AcpAgentHarness::with_session_namespace(REASONIX_SESSION_NAMESPACE);
+        if let Some(model) = &self.model {
+            harness = harness.with_model(model.clone());
+        }
+        harness
     }
 }
 
@@ -149,84 +180,12 @@ async fn spawn_reasonix(
     Ok(child.into())
 }
 
-/// Spawn reasonix in a native PTY (portable-pty), writing the prompt to the
-/// PTY master so that it appears as terminal input.  Output is read from the
-/// PTY master and bridged into tokio channels for the MsgStore pipeline.
-async fn spawn_reasonix_pty(
-    command_parts: CommandParts,
-    current_dir: &Path,
-    env: &ExecutionEnv,
-    cmd_overrides: &CmdOverrides,
-) -> Result<SpawnedChild, ExecutorError> {
-    let (program_path, args) = command_parts.into_resolved().await?;
-
-    let pty_system = portable_pty::NativePtySystem::default();
-    let pty_pair = pty_system
-        .openpty(portable_pty::PtySize {
-            rows: 24,
-            cols: 120,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|e| ExecutorError::Io(io::Error::other(e.to_string())))?;
-
-    let mut cmd = portable_pty::CommandBuilder::new(&program_path);
-    cmd.args(&args);
-    cmd.cwd(current_dir);
-
-    let merged_env = env.clone().with_profile(cmd_overrides);
-    for (key, value) in &merged_env.vars {
-        cmd.env(key, value);
-    }
-
-    let child = pty_pair
-        .slave
-        .spawn_command(cmd)
-        .map_err(|e| ExecutorError::Io(io::Error::other(e.to_string())))?;
-
-    // Bridge PTY output → tokio mpsc channel
-    let (stdout_tx, stdout_rx) = tokio::sync::mpsc::unbounded_channel::<io::Result<Vec<u8>>>();
-    let (_stderr_tx, stderr_rx) = tokio::sync::mpsc::unbounded_channel::<io::Result<Vec<u8>>>();
-    drop(_stderr_tx); // PTY merges stdout+stderr; stderr channel stays empty
-
-    let mut reader = pty_pair
-        .master
-        .try_clone_reader()
-        .map_err(|e| ExecutorError::Io(io::Error::other(e.to_string())))?;
-
-    let master = pty_pair.master;
-    std::thread::spawn(move || {
-        let _master = master; // keep PTY master alive while reading
-        let mut buf = [0u8; 4096];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) => break, // EOF
-                Ok(n) => {
-                    if stdout_tx.send(Ok(buf[..n].to_vec())).is_err() {
-                        break;
-                    }
-                }
-                Err(e) => {
-                    let _ = stdout_tx.send(Err(e));
-                    break;
-                }
-            }
-        }
-    });
-
-    Ok(SpawnedChild {
-        child: ChildHandle::Pty {
-            child,
-            stdout_rx,
-            stderr_rx,
-        },
-        exit_signal: None,
-        cancel: None,
-    })
-}
-
 #[async_trait]
 impl StandardCodingAgentExecutor for Reasonix {
+    fn use_approvals(&mut self, approvals: Arc<dyn ExecutorApprovalService>) {
+        self.approvals_service = Some(approvals);
+    }
+
     async fn spawn(
         &self,
         current_dir: &Path,
@@ -235,17 +194,25 @@ impl StandardCodingAgentExecutor for Reasonix {
     ) -> Result<SpawnedChild, ExecutorError> {
         let combined_prompt = self.append_prompt.combine_prompt(prompt);
 
-        if self.use_code_mode.unwrap_or(false) {
-            // code mode: prompt is a positional argument; spawn via portable-pty for /dev/tty access
-            let command = self
-                .build_command_builder(false)?
-                .extend_params([&combined_prompt])
-                .build_initial()?;
-            spawn_reasonix_pty(command, current_dir, env, &self.cmd).await
+        if self.is_code_mode() {
+            // code mode: drive reasonix through ACP over stdio. The harness
+            // detects turn completion and signals the container, so the process
+            // is reaped instead of hanging forever in a "loading" state.
+            let command = self.build_acp_command_builder()?.build_initial()?;
+            self.acp_harness()
+                .spawn_with_command(
+                    current_dir,
+                    combined_prompt,
+                    command,
+                    env,
+                    &self.cmd,
+                    self.acp_approvals(),
+                )
+                .await
         } else {
-            // run mode: prompt is a positional argument
+            // run mode: one-shot `reasonix run <prompt>` that exits on completion
             let command = self
-                .build_command_builder(true)?
+                .build_run_command_builder(true)?
                 .extend_params([combined_prompt])
                 .build_initial()?;
             spawn_reasonix(command, None, current_dir, env, &self.cmd).await
@@ -254,20 +221,40 @@ impl StandardCodingAgentExecutor for Reasonix {
 
     async fn spawn_follow_up(
         &self,
-        _current_dir: &Path,
-        _prompt: &str,
-        _session_id: &str,
+        current_dir: &Path,
+        prompt: &str,
+        session_id: &str,
         _reset_to_message_id: Option<&str>,
-        _env: &ExecutionEnv,
+        env: &ExecutionEnv,
     ) -> Result<SpawnedChild, ExecutorError> {
-        Err(ExecutorError::FollowUpNotSupported(
-            "Reasonix does not support session resume via CLI".into(),
-        ))
+        if !self.is_code_mode() {
+            return Err(ExecutorError::FollowUpNotSupported(
+                "Reasonix run mode does not support session resume; enable code mode".into(),
+            ));
+        }
+
+        let combined_prompt = self.append_prompt.combine_prompt(prompt);
+        let command = self.build_acp_command_builder()?.build_follow_up(&[])?;
+        self.acp_harness()
+            .spawn_follow_up_with_command(
+                current_dir,
+                combined_prompt,
+                session_id,
+                command,
+                env,
+                &self.cmd,
+                self.acp_approvals(),
+            )
+            .await
     }
 
-    fn normalize_logs(&self, msg_store: Arc<MsgStore>, _worktree_path: &Path) {
-        let entry_index_provider = EntryIndexProvider::start_from(&msg_store);
-        normalize_stdout_logs(msg_store, entry_index_provider);
+    fn normalize_logs(&self, msg_store: Arc<MsgStore>, worktree_path: &Path) {
+        if self.is_code_mode() {
+            super::acp::normalize_logs(msg_store, worktree_path);
+        } else {
+            let entry_index_provider = EntryIndexProvider::start_from(&msg_store);
+            normalize_stdout_logs(msg_store, entry_index_provider);
+        }
     }
 
     fn default_mcp_config_path(&self) -> Option<PathBuf> {
