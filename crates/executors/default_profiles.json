@@ -115,6 +115,23 @@
         }
       }
     },
+    "KIMI_CLI": {
+      "DEFAULT": {
+        "KIMI_CLI": {
+          "mode": "yolo"
+        }
+      },
+      "PLAN": {
+        "KIMI_CLI": {
+          "mode": "plan"
+        }
+      },
+      "APPROVALS": {
+        "KIMI_CLI": {
+          "mode": "default"
+        }
+      }
+    },
     "CURSOR_AGENT": {
       "DEFAULT": {
         "CURSOR_AGENT": {

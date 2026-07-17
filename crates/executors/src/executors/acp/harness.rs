@@ -31,6 +31,7 @@ pub struct AcpAgentHarness {
     session_namespace: String,
     model: Option<String>,
     mode: Option<String>,
+    native_session_resume: bool,
 }
 
 impl Default for AcpAgentHarness {
@@ -47,6 +48,7 @@ impl AcpAgentHarness {
             session_namespace: "gemini_sessions".to_string(),
             model: None,
             mode: None,
+            native_session_resume: false,
         }
     }
 
@@ -56,6 +58,7 @@ impl AcpAgentHarness {
             session_namespace: namespace.into(),
             model: None,
             mode: None,
+            native_session_resume: false,
         }
     }
 
@@ -66,6 +69,14 @@ impl AcpAgentHarness {
 
     pub fn with_mode(mut self, mode: impl Into<String>) -> Self {
         self.mode = Some(mode.into());
+        self
+    }
+
+    /// Resume follow-up sessions natively via ACP `session/load` instead of
+    /// forking the local history into a brand new agent session. Only enable
+    /// for agents that advertise `loadSession` (e.g. Kimi).
+    pub fn with_native_session_resume(mut self, enabled: bool) -> Self {
+        self.native_session_resume = enabled;
         self
     }
 
@@ -108,6 +119,7 @@ impl AcpAgentHarness {
             self.session_namespace.clone(),
             self.model.clone(),
             self.mode.clone(),
+            self.native_session_resume,
             approvals,
             cancel.clone(),
         )
@@ -161,6 +173,7 @@ impl AcpAgentHarness {
             self.session_namespace.clone(),
             self.model.clone(),
             self.mode.clone(),
+            self.native_session_resume,
             approvals,
             cancel.clone(),
         )
@@ -183,6 +196,7 @@ impl AcpAgentHarness {
         session_namespace: String,
         model: Option<String>,
         mode: Option<String>,
+        native_session_resume: bool,
         approvals: Option<std::sync::Arc<dyn ExecutorApprovalService>>,
         cancel: CancellationToken,
     ) -> Result<(), ExecutorError> {
@@ -326,30 +340,74 @@ impl AcpAgentHarness {
                         // Handle session creation/forking
                         let (acp_session_id, display_session_id, prompt_to_send) =
                             if let Some(existing) = existing_session {
-                                // Fork existing session
-                                let new_ui_id = uuid::Uuid::new_v4().to_string();
-                                let _ = session_manager.fork_session(&existing, &new_ui_id);
-
-                                let history = session_manager.read_session_raw(&new_ui_id).ok();
-                                let meta =
-                                    history.map(|h| serde_json::json!({ "history_jsonl": h }));
-
-                                let mut req = proto::NewSessionRequest::new(cwd.clone());
-                                if let Some(m) = meta
-                                    && let Some(obj) = m.as_object()
-                                {
-                                    req = req.meta(obj.clone());
-                                }
-                                match conn.new_session(req).await {
-                                    Ok(resp) => {
-                                        let resume_prompt = session_manager
-                                            .generate_resume_prompt(&new_ui_id, &prompt)
-                                            .unwrap_or_else(|_| prompt.clone());
-                                        (resp.session_id.0.to_string(), new_ui_id, resume_prompt)
+                                let mut native_loaded = false;
+                                if native_session_resume {
+                                    match conn
+                                        .load_session(proto::LoadSessionRequest::new(
+                                            existing.clone(),
+                                            cwd.clone(),
+                                        ))
+                                        .await
+                                    {
+                                        Ok(_) => {
+                                            native_loaded = true;
+                                            // `session/load` replays the whole history as
+                                            // session updates; drop them so follow-up logs
+                                            // only contain new turns. Keep the user-prompt
+                                            // event queued before the connection started.
+                                            let mut user_event = None;
+                                            while let Ok(event) = event_rx.try_recv() {
+                                                if user_event.is_none()
+                                                    && matches!(event, AcpEvent::User(_))
+                                                {
+                                                    user_event = Some(event);
+                                                }
+                                            }
+                                            if let Some(event) = user_event {
+                                                let _ = event_tx.send(event);
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!(
+                                                "Failed to load ACP session {existing}: {e}; falling back to session fork"
+                                            );
+                                        }
                                     }
-                                    Err(e) => {
-                                        error!("Failed to create session: {}", e);
-                                        return;
+                                }
+
+                                if native_loaded {
+                                    (existing.clone(), existing, prompt)
+                                } else {
+                                    // Fork existing session
+                                    let new_ui_id = uuid::Uuid::new_v4().to_string();
+                                    let _ = session_manager.fork_session(&existing, &new_ui_id);
+
+                                    let history =
+                                        session_manager.read_session_raw(&new_ui_id).ok();
+                                    let meta = history
+                                        .map(|h| serde_json::json!({ "history_jsonl": h }));
+
+                                    let mut req = proto::NewSessionRequest::new(cwd.clone());
+                                    if let Some(m) = meta
+                                        && let Some(obj) = m.as_object()
+                                    {
+                                        req = req.meta(obj.clone());
+                                    }
+                                    match conn.new_session(req).await {
+                                        Ok(resp) => {
+                                            let resume_prompt = session_manager
+                                                .generate_resume_prompt(&new_ui_id, &prompt)
+                                                .unwrap_or_else(|_| prompt.clone());
+                                            (
+                                                resp.session_id.0.to_string(),
+                                                new_ui_id,
+                                                resume_prompt,
+                                            )
+                                        }
+                                        Err(e) => {
+                                            error!("Failed to create session: {}", e);
+                                            return;
+                                        }
                                     }
                                 }
                             } else {

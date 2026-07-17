@@ -1224,6 +1224,7 @@ impl ContainerService for LocalContainerService {
                     | BaseCodingAgent::ClaudeCode
                     | BaseCodingAgent::Gemini
                     | BaseCodingAgent::QwenCode
+                    | BaseCodingAgent::KimiCli
                     | BaseCodingAgent::Opencode,
                 ) => ExecutorApprovalBridge::new(
                     self.approvals.clone(),
