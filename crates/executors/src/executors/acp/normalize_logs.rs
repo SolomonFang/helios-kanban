@@ -181,7 +181,7 @@ pub fn normalize_logs(msg_store: Arc<MsgStore>, worktree_path: &Path) {
                         };
                         msg_store.push_patch(ConversationPatch::add_normalized_entry(idx, entry));
                     }
-                    AcpEvent::RequestPermission(perm) => {
+                    AcpEvent::RequestPermission(perm, meta) => {
                         if let Ok(tc) = agent_client_protocol::ToolCall::try_from(perm.tool_call) {
                             handle_tool_call(
                                 &tc,
@@ -191,6 +191,22 @@ pub fn normalize_logs(msg_store: Arc<MsgStore>, worktree_path: &Path) {
                                 &entry_index,
                                 &msg_store,
                             );
+                            if let Some(meta) = meta {
+                                let id = tc.tool_call_id.0.to_string();
+                                if let Some(tool_data) = tool_states.get_mut(&id) {
+                                    tool_data.status_override =
+                                        Some(LogToolStatus::PendingApproval {
+                                            approval_id: meta.approval_id,
+                                            requested_at: meta.requested_at,
+                                            timeout_at: meta.timeout_at,
+                                        });
+                                    let entry = build_tool_entry(tool_data);
+                                    msg_store.push_patch(ConversationPatch::replace(
+                                        tool_data.index,
+                                        entry,
+                                    ));
+                                }
+                            }
                         }
                     }
                     AcpEvent::ToolCall(tc) => handle_tool_call(
@@ -225,7 +241,17 @@ pub fn normalize_logs(msg_store: Arc<MsgStore>, worktree_path: &Path) {
                     }
                     AcpEvent::ApprovalResponse(resp) => {
                         tracing::trace!("Received approval response: {:?}", resp);
-                        if let ApprovalStatus::Denied { reason } = resp.status {
+                        // Resolve the pending_approval marker to its final status
+                        if let Some(tool_data) = tool_states.get_mut(&resp.tool_call_id)
+                            && tool_data.status_override.is_some()
+                        {
+                            tool_data.status_override =
+                                LogToolStatus::from_approval_status(&resp.status);
+                            let entry = build_tool_entry(tool_data);
+                            msg_store
+                                .push_patch(ConversationPatch::replace(tool_data.index, entry));
+                        }
+                        if let ApprovalStatus::Denied { reason } = &resp.status {
                             let tool_name = tool_states
                                 .get(&resp.tool_call_id)
                                 .map(|t| {
@@ -274,26 +300,33 @@ pub fn normalize_logs(msg_store: Arc<MsgStore>, worktree_path: &Path) {
             if is_new {
                 tool_data.index = entry_index.next();
             }
-            let action = map_to_action_type(tool_data);
-            let entry = NormalizedEntry {
-                timestamp: None,
-                entry_type: NormalizedEntryType::ToolUse {
-                    tool_name: tool_data.title.clone(),
-                    action_type: action,
-                    status: convert_tool_status(&tool_data.status),
-                },
-                content: get_tool_content(tool_data),
-                metadata: serde_json::to_value(ToolCallMetadata {
-                    tool_call_id: tool_data.id.0.to_string(),
-                })
-                .ok(),
-            };
+            let entry = build_tool_entry(tool_data);
             let patch = if is_new {
                 ConversationPatch::add_normalized_entry(tool_data.index, entry)
             } else {
                 ConversationPatch::replace(tool_data.index, entry)
             };
             msg_store.push_patch(patch);
+        }
+
+        fn build_tool_entry(tool_data: &PartialToolCallData) -> NormalizedEntry {
+            let action = map_to_action_type(tool_data);
+            NormalizedEntry {
+                timestamp: None,
+                entry_type: NormalizedEntryType::ToolUse {
+                    tool_name: tool_data.title.clone(),
+                    action_type: action,
+                    status: tool_data
+                        .status_override
+                        .clone()
+                        .unwrap_or_else(|| convert_tool_status(&tool_data.status)),
+                },
+                content: get_tool_content(tool_data),
+                metadata: serde_json::to_value(ToolCallMetadata {
+                    tool_call_id: tool_data.id.0.to_string(),
+                })
+                .ok(),
+            }
         }
 
         fn map_to_action_type(tc: &PartialToolCallData) -> ActionType {
@@ -612,6 +645,9 @@ struct PartialToolCallData {
     kind: agent_client_protocol::ToolKind,
     title: String,
     status: agent_client_protocol::ToolCallStatus,
+    /// UI-facing status that takes precedence over the ACP status (e.g.
+    /// `pending_approval` while a permission request awaits the user).
+    status_override: Option<LogToolStatus>,
     path: Option<PathBuf>,
     content: Vec<agent_client_protocol::ToolCallContent>,
     raw_input: Option<serde_json::Value>,
@@ -658,6 +694,7 @@ impl Default for PartialToolCallData {
             kind: agent_client_protocol::ToolKind::default(),
             title: String::new(),
             status: Default::default(),
+            status_override: None,
             path: None,
             content: Vec::new(),
             raw_input: None,
@@ -766,4 +803,76 @@ struct EditInput {
     old_string: Option<String>,
     #[serde(default)]
     new_string: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use workspace_utils::log_msg::LogMsg;
+
+    use super::*;
+
+    const TOOL_CALL_LINE: &str = "{\"ToolCall\":{\"toolCallId\":\"0:tool_x\",\"title\":\"ExitPlanMode\",\"status\":\"in_progress\",\"content\":[]}}\n";
+    const PERMISSION_LINE: &str = "{\"RequestPermission\":[{\"sessionId\":\"s1\",\"toolCall\":{\"toolCallId\":\"0:tool_x\",\"title\":\"ExitPlanMode\",\"status\":\"in_progress\",\"content\":[]},\"options\":[{\"optionId\":\"allow\",\"name\":\"Allow\",\"kind\":\"allow_once\"}]},{\"approval_id\":\"ap-1\",\"requested_at\":\"2026-07-18T01:00:00Z\",\"timeout_at\":\"2026-07-18T11:00:00Z\"}]}\n";
+
+    fn patch_payloads(msg_store: &MsgStore) -> Vec<String> {
+        msg_store
+            .get_history()
+            .into_iter()
+            .filter_map(|msg| match msg {
+                LogMsg::JsonPatch(patch) => serde_json::to_string(&patch).ok(),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn permission_request_marks_tool_call_pending_approval() {
+        let msg_store = Arc::new(MsgStore::new());
+        normalize_logs(msg_store.clone(), Path::new("/tmp"));
+
+        msg_store.push_stdout(TOOL_CALL_LINE.to_string());
+        msg_store.push_stdout(PERMISSION_LINE.to_string());
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let patches = patch_payloads(&msg_store);
+        assert!(
+            patches
+                .iter()
+                .any(|p| p.contains("\"status\":\"pending_approval\"") && p.contains("ap-1")),
+            "expected a patch marking the tool call pending_approval, got: {patches:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn approval_response_sets_final_tool_status() {
+        let msg_store = Arc::new(MsgStore::new());
+        normalize_logs(msg_store.clone(), Path::new("/tmp"));
+
+        msg_store.push_stdout(TOOL_CALL_LINE.to_string());
+        msg_store.push_stdout(PERMISSION_LINE.to_string());
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        msg_store.push_stdout(
+            "{\"ApprovalResponse\":{\"tool_call_id\":\"0:tool_x\",\"status\":{\"status\":\"denied\",\"reason\":\"nope\"}}}\n"
+                .to_string(),
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let patches = patch_payloads(&msg_store);
+        let pending_pos = patches
+            .iter()
+            .position(|p| p.contains("\"status\":\"pending_approval\""));
+        let denied_pos = patches
+            .iter()
+            .rposition(|p| p.contains("\"status\":\"denied\""));
+        assert!(
+            pending_pos.is_some(),
+            "never saw pending_approval status: {patches:?}"
+        );
+        assert!(
+            denied_pos.is_some_and(|d| Some(d) > pending_pos),
+            "expected a denied status patch after the pending one: {patches:?}"
+        );
+    }
 }

@@ -24,7 +24,13 @@ pub enum AcpEvent {
     Plan(agent_client_protocol::Plan),
     AvailableCommands(Vec<agent_client_protocol::AvailableCommand>),
     CurrentMode(agent_client_protocol::SessionModeId),
-    RequestPermission(agent_client_protocol::RequestPermissionRequest),
+    /// Permission request from the agent. The optional metadata links the
+    /// request to a vibe-kanban approval (once one has been created) so the
+    /// conversation entry can be rendered as `pending_approval`.
+    RequestPermission(
+        agent_client_protocol::RequestPermissionRequest,
+        Option<PendingApprovalMeta>,
+    ),
     ApprovalResponse(ApprovalResponse),
     Error(String),
     Done(String),
@@ -49,4 +55,13 @@ impl FromStr for AcpEvent {
 pub struct ApprovalResponse {
     pub tool_call_id: String,
     pub status: ApprovalStatus,
+}
+
+/// Approval metadata attached to a permission request event, allowing the log
+/// normalizer to mark the tool call entry as `pending_approval`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingApprovalMeta {
+    pub approval_id: String,
+    pub requested_at: chrono::DateTime<chrono::Utc>,
+    pub timeout_at: chrono::DateTime<chrono::Utc>,
 }

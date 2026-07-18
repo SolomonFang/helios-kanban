@@ -5,11 +5,11 @@ use async_trait::async_trait;
 use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
-use workspace_utils::approvals::ApprovalStatus;
+use workspace_utils::approvals::{APPROVAL_TIMEOUT_SECONDS, ApprovalStatus};
 
 use crate::{
     approvals::{ExecutorApprovalError, ExecutorApprovalService},
-    executors::acp::{AcpEvent, ApprovalResponse},
+    executors::acp::{AcpEvent, ApprovalResponse, PendingApprovalMeta},
 };
 
 /// ACP client that handles agent-client protocol communication
@@ -69,9 +69,8 @@ impl acp::Client for AcpClient {
         &self,
         args: acp::RequestPermissionRequest,
     ) -> Result<acp::RequestPermissionResponse, acp::Error> {
-        self.send_event(AcpEvent::RequestPermission(args.clone()));
-
         if self.approvals.is_none() {
+            self.send_event(AcpEvent::RequestPermission(args.clone(), None));
             // Auto-approve with best available option when no approval service is configured
             let chosen_option = args
                 .options
@@ -109,17 +108,31 @@ impl acp::Client for AcpClient {
             Ok(id) => id,
             Err(ExecutorApprovalError::Cancelled) => {
                 debug!("ACP approval cancelled for tool_call_id={tool_call_id}");
+                self.send_event(AcpEvent::RequestPermission(args.clone(), None));
                 return Ok(acp::RequestPermissionResponse::new(
                     acp::RequestPermissionOutcome::Cancelled,
                 ));
             }
             Err(err) => {
-                tracing::error!(
-                    "ACP approval failed for tool_call_id={tool_call_id}: {err}"
-                );
+                tracing::error!("ACP approval failed for tool_call_id={tool_call_id}: {err}");
+                self.send_event(AcpEvent::RequestPermission(args.clone(), None));
                 return Err(acp::Error::internal_error());
             }
         };
+
+        // The approval now exists: re-emit the permission request with the
+        // approval metadata so the UI can render an approve/deny card on the
+        // tool call entry.
+        let requested_at = chrono::Utc::now();
+        let timeout_at = requested_at + chrono::Duration::seconds(APPROVAL_TIMEOUT_SECONDS);
+        self.send_event(AcpEvent::RequestPermission(
+            args.clone(),
+            Some(PendingApprovalMeta {
+                approval_id: approval_id.clone(),
+                requested_at,
+                timeout_at,
+            }),
+        ));
 
         let status = match approval_service
             .wait_tool_approval(&approval_id, self.cancel.clone())
@@ -133,9 +146,7 @@ impl acp::Client for AcpClient {
                 ));
             }
             Err(err) => {
-                tracing::error!(
-                    "ACP approval failed for tool_call_id={tool_call_id}: {err}"
-                );
+                tracing::error!("ACP approval failed for tool_call_id={tool_call_id}: {err}");
                 return Err(acp::Error::internal_error());
             }
         };
