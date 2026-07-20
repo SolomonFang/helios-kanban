@@ -35,6 +35,7 @@ pub struct Project {
 pub struct CreateProject {
     pub name: String,
     #[serde(default)]
+    #[ts(optional, type = "string | null")]
     pub description: Option<String>,
     pub repositories: Vec<CreateProjectRepo>,
 }
@@ -44,6 +45,7 @@ pub struct UpdateProject {
     pub name: Option<String>,
     /// Pass Some("") to clear; omit (None) to keep existing.
     #[serde(default)]
+    #[ts(optional, type = "string | null")]
     pub description: Option<String>,
 }
 
