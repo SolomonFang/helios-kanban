@@ -159,6 +159,10 @@ pub struct ListTasksRequest {
         description = "Optional status filter: 'todo', 'inprogress', 'inreview', 'done', 'cancelled'"
     )]
     pub status: Option<String>,
+    #[schemars(description = "Optional iteration code filter (e.g. '260717')")]
+    pub iteration: Option<String>,
+    #[schemars(description = "Optional case-insensitive search in title/description")]
+    pub query: Option<String>,
     #[schemars(description = "Maximum number of tasks to return (default: 50)")]
     pub limit: Option<i32>,
 }
@@ -247,6 +251,8 @@ pub struct ListTasksResponse {
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct ListTasksFilters {
     pub status: Option<String>,
+    pub iteration: Option<String>,
+    pub query: Option<String>,
     pub limit: i32,
 }
 
@@ -281,8 +287,10 @@ pub struct DeleteTaskRequest {
 pub struct McpWorkspaceRepoInput {
     #[schemars(description = "The repository ID")]
     pub repo_id: Uuid,
-    #[schemars(description = "The base branch for this repository")]
-    pub base_branch: String,
+    #[schemars(
+        description = "Optional base/target branch. Omit to use the repo's default_target_branch (else 'main')."
+    )]
+    pub base_branch: Option<String>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -290,12 +298,14 @@ pub struct StartWorkspaceSessionRequest {
     #[schemars(description = "The ID of the task to start")]
     pub task_id: Uuid,
     #[schemars(
-        description = "The coding agent executor to run ('CLAUDE_CODE', 'AMP', 'GEMINI', 'CODEX', 'OPENCODE', 'CURSOR_AGENT', 'QWEN_CODE', 'COPILOT', 'DROID', 'REASONIX', 'KIMI_CLI')"
+        description = "Optional coding agent executor ('CLAUDE_CODE', 'AMP', 'GEMINI', 'CODEX', 'OPENCODE', 'CURSOR_AGENT', 'QWEN_CODE', 'COPILOT', 'DROID', 'REASONIX', 'KIMI_CLI'). Omit to use Settings default from /api/info → config.executor_profile."
     )]
-    pub executor: String,
+    pub executor: Option<String>,
     #[schemars(description = "Optional executor variant, if needed")]
     pub variant: Option<String>,
-    #[schemars(description = "Base branch for each repository in the project")]
+    #[schemars(
+        description = "Repositories to include. Pass at least one {repo_id}; base_branch is optional."
+    )]
     pub repos: Vec<McpWorkspaceRepoInput>,
 }
 
@@ -303,6 +313,29 @@ pub struct StartWorkspaceSessionRequest {
 pub struct StartWorkspaceSessionResponse {
     pub task_id: String,
     pub workspace_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct StopWorkspaceSessionRequest {
+    #[schemars(description = "The workspace ID to stop")]
+    pub workspace_id: Uuid,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct StopWorkspaceSessionResponse {
+    pub workspace_id: String,
+    pub stopped: bool,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CancelTaskRequest {
+    #[schemars(description = "The ID of the task to soft-cancel (status=cancelled)")]
+    pub task_id: Uuid,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct CancelTaskResponse {
+    pub task: TaskDetails,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -525,6 +558,80 @@ impl TaskServer {
             self.base_url.trim_end_matches('/'),
             path.trim_start_matches('/')
         )
+    }
+
+    async fn resolve_default_executor_profile(
+        &self,
+        executor: Option<String>,
+        variant: Option<String>,
+    ) -> Result<(BaseCodingAgent, Option<String>), CallToolResult> {
+        let mut executor_str = executor
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let mut variant = variant.and_then(|v| {
+            let trimmed = v.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+
+        if executor_str.is_none() {
+            let info: serde_json::Value = self
+                .send_json(self.client.get(self.url("/api/info")))
+                .await?;
+            executor_str = info
+                .pointer("/config/executor_profile/executor")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            if variant.is_none() {
+                variant = info
+                    .pointer("/config/executor_profile/variant")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .filter(|s| !s.is_empty());
+            }
+        }
+
+        let Some(executor_str) = executor_str else {
+            return Err(Self::err(
+                "No executor provided and could not read default from /api/info (config.executor_profile)".to_string(),
+                None::<String>,
+            )
+            .unwrap());
+        };
+
+        let normalized = executor_str.replace('-', "_").to_ascii_uppercase();
+        let base = BaseCodingAgent::from_str(&normalized).map_err(|_| {
+            Self::err(
+                format!("Unknown executor '{executor_str}'."),
+                None::<String>,
+            )
+            .unwrap()
+        })?;
+        Ok((base, variant))
+    }
+
+    async fn resolve_repo_target_branch(
+        &self,
+        repo_id: Uuid,
+        base_branch: Option<String>,
+    ) -> Result<String, CallToolResult> {
+        if let Some(branch) = base_branch
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+        {
+            return Ok(branch);
+        }
+
+        let repo: Repo = self
+            .send_json(self.client.get(self.url(&format!("/api/repos/{repo_id}"))))
+            .await?;
+        Ok(repo
+            .default_target_branch
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "main".to_string()))
     }
 
     /// Expands @tagname references in text by replacing them with tag content.
@@ -801,6 +908,8 @@ impl TaskServer {
         Parameters(ListTasksRequest {
             project_id,
             status,
+            iteration,
+            query,
             limit,
         }): Parameters<ListTasksRequest>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -825,13 +934,39 @@ impl TaskServer {
                 Err(e) => return Ok(e),
             };
 
+        let iteration_filter = iteration
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let query_filter = query
+            .as_ref()
+            .map(|s| s.trim().to_ascii_lowercase())
+            .filter(|s| !s.is_empty());
+
         let task_limit = limit.unwrap_or(50).max(0) as usize;
         let filtered = all_tasks.into_iter().filter(|t| {
-            if let Some(ref want) = status_filter {
-                &t.status == want
-            } else {
-                true
+            if let Some(ref want) = status_filter
+                && &t.status != want
+            {
+                return false;
             }
+            if let Some(ref want_it) = iteration_filter
+                && t.iteration.as_deref() != Some(want_it.as_str())
+            {
+                return false;
+            }
+            if let Some(ref q) = query_filter {
+                let hay = format!(
+                    "{} {}",
+                    t.title,
+                    t.description.as_deref().unwrap_or("")
+                )
+                .to_ascii_lowercase();
+                if !hay.contains(q) {
+                    return false;
+                }
+            }
+            true
         });
         let limited: Vec<TaskWithAttemptStatus> = filtered.take(task_limit).collect();
 
@@ -846,6 +981,8 @@ impl TaskServer {
             project_id: project_id.to_string(),
             applied_filters: ListTasksFilters {
                 status: status.clone(),
+                iteration: iteration_filter,
+                query: query.clone(),
                 limit: task_limit as i32,
             },
         };
@@ -854,7 +991,7 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Start working on a task by creating and launching a new workspace session."
+        description = "Start working on a task by creating and launching a new workspace session. Omit `executor` to use Settings default. Omit each repo `base_branch` to use that repo's default_target_branch."
     )]
     async fn start_workspace_session(
         &self,
@@ -872,43 +1009,33 @@ impl TaskServer {
             );
         }
 
-        let executor_trimmed = executor.trim();
-        if executor_trimmed.is_empty() {
-            return Self::err("Executor must not be empty.".to_string(), None::<String>);
-        }
-
-        let normalized_executor = executor_trimmed.replace('-', "_").to_ascii_uppercase();
-        let base_executor = match BaseCodingAgent::from_str(&normalized_executor) {
-            Ok(exec) => exec,
-            Err(_) => {
-                return Self::err(
-                    format!("Unknown executor '{executor_trimmed}'."),
-                    None::<String>,
-                );
-            }
+        let (base_executor, variant) = match self
+            .resolve_default_executor_profile(executor, variant)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => return Ok(e),
         };
-
-        let variant = variant.and_then(|v| {
-            let trimmed = v.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
-            }
-        });
 
         let executor_profile_id = ExecutorProfileId {
             executor: base_executor,
             variant,
         };
 
-        let workspace_repos: Vec<WorkspaceRepoInput> = repos
-            .into_iter()
-            .map(|r| WorkspaceRepoInput {
+        let mut workspace_repos: Vec<WorkspaceRepoInput> = Vec::with_capacity(repos.len());
+        for r in repos {
+            let target_branch = match self
+                .resolve_repo_target_branch(r.repo_id, r.base_branch)
+                .await
+            {
+                Ok(b) => b,
+                Err(e) => return Ok(e),
+            };
+            workspace_repos.push(WorkspaceRepoInput {
                 repo_id: r.repo_id,
-                target_branch: r.base_branch,
-            })
-            .collect();
+                target_branch,
+            });
+        }
 
         let payload = CreateTaskAttemptBody {
             task_id,
@@ -929,6 +1056,68 @@ impl TaskServer {
         };
 
         TaskServer::success(&response)
+    }
+
+    #[tool(
+        description = "Stop a running workspace/agent session. Does not cancel or delete the task."
+    )]
+    async fn stop_workspace_session(
+        &self,
+        Parameters(StopWorkspaceSessionRequest { workspace_id }): Parameters<
+            StopWorkspaceSessionRequest,
+        >,
+    ) -> Result<CallToolResult, ErrorData> {
+        let url = self.url(&format!("/api/task-attempts/{}/stop", workspace_id));
+        if let Err(e) = self
+            .send_empty_json(self.client.post(&url).json(&serde_json::json!({})))
+            .await
+        {
+            return Ok(e);
+        }
+        TaskServer::success(&StopWorkspaceSessionResponse {
+            workspace_id: workspace_id.to_string(),
+            stopped: true,
+        })
+    }
+
+    #[tool(
+        description = "Soft-cancel a task (sets status to 'cancelled'). Prefer this over delete_task unless permanent removal is required."
+    )]
+    async fn cancel_task(
+        &self,
+        Parameters(CancelTaskRequest { task_id }): Parameters<CancelTaskRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        // Best-effort stop of workspaces for this task
+        let attempts_url = self.url(&format!("/api/task-attempts?task_id={}", task_id));
+        if let Ok(workspaces) = self
+            .send_json::<Vec<Workspace>>(self.client.get(&attempts_url))
+            .await
+        {
+            for ws in workspaces {
+                let stop_url = self.url(&format!("/api/task-attempts/{}/stop", ws.id));
+                let _ = self
+                    .send_empty_json(self.client.post(&stop_url).json(&serde_json::json!({})))
+                    .await;
+            }
+        }
+
+        let payload = UpdateTask {
+            title: None,
+            description: None,
+            status: Some(TaskStatus::Cancelled),
+            parent_workspace_id: None,
+            image_ids: None,
+            iteration: None,
+        };
+        let url = self.url(&format!("/api/tasks/{}", task_id));
+        let updated_task: Task = match self.send_json(self.client.put(&url).json(&payload)).await {
+            Ok(t) => t,
+            Err(e) => return Ok(e),
+        };
+
+        TaskServer::success(&CancelTaskResponse {
+            task: TaskDetails::from_task(updated_task),
+        })
     }
 
     #[tool(
@@ -1023,7 +1212,7 @@ impl TaskServer {
 #[tool_handler]
 impl ServerHandler for TaskServer {
     fn get_info(&self) -> ServerInfo {
-        let mut instruction = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. You can get project ids by using `list projects`. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_workspace_session', 'get_task', 'update_task', 'delete_task', 'list_repos', 'get_repo', 'update_setup_script', 'update_cleanup_script', 'update_dev_server_script'. Make sure to pass `project_id`, `task_id`, or `repo_id` where required. You can use list tools to get the available ids.".to_string();
+        let mut instruction = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. You can get project ids by using `list projects`. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_workspace_session', 'stop_workspace_session', 'get_task', 'update_task', 'cancel_task', 'delete_task', 'list_repos', 'get_repo', 'update_setup_script', 'update_cleanup_script', 'update_dev_server_script'. Omit executor on start_workspace_session to use Settings default; omit base_branch to use repo default_target_branch. Prefer cancel_task over delete_task. Make sure to pass `project_id`, `task_id`, or `repo_id` where required.".to_string();
         if self.context.is_some() {
             let context_instruction = "Use 'get_context' to fetch project/task/workspace metadata for the active Vibe Kanban workspace session when available.";
             instruction = format!("{} {}", context_instruction, instruction);

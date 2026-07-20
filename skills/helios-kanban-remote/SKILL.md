@@ -35,8 +35,10 @@ Control a running [Helios Kanban](https://github.com/SolomonFang/vibe-kanban) in
 | "看看进行中的" | `hk tasks list --status inprogress` |
 | "找登录相关任务" | `hk tasks list --query 登录` |
 | "260717 迭代" | `hk tasks list --iteration 260717` |
-| "创建任务" | `hk tasks create "标题"`（自动带 iteration/url） |
+| "创建任务" | `hk tasks create "标题" --desc "用 @coding-standards"` |
 | "有哪些分支" | `hk branches <repo_id> [--query develop]` |
+| "多仓启动" | `hk start <task_id> --repo <id1> --repo <id2>:develop` |
+| "有哪些 tag" | `hk tags` |
 | "基于 develop 启动" | `hk start <task_id> --branch develop` |
 | "新建并启动" | `hk create-and-start "标题"` |
 | "再跟它说一句…" | `hk follow-up <task_id> <prompt>`（运行中自动排队） |
@@ -126,8 +128,9 @@ Requires `curl` and `jq`. See `scripts/hk.sh --help`.
 2. Prefer Tailscale; don’t expose kanban publicly without auth.
 3. Phone = dispatch / follow-up / approve — review diffs & merge on desktop.
 4. If `hk health` fails, stop and report connectivity.
-5. Single `--repo` in CLI; multi-repo → Web UI / raw API.
+5. Multi-repo: repeat `--repo` (`ID` or `ID:branch`).
 6. PR / push / merge / rebase: tell user to use desktop Web UI.
+7. `@tagname` in `--desc` / follow-up expands via `hk tags` / `/api/tags`.
 
 ## Out of scope (point user to Web UI)
 
@@ -155,7 +158,7 @@ https://github.com/SolomonFang/vibe-kanban/blob/hly-dev/skills/helios-kanban-rem
 }
 ```
 
-Prefer MCP when co-located; use HTTP/`hk.sh` for remote phone control. MCP still requires explicit `executor` for start — resolve via `GET /api/info` first.
+Prefer MCP when co-located; use HTTP/`hk.sh` for remote phone control. MCP `start_workspace_session` may omit `executor` / `base_branch` (uses Settings + repo defaults). Also: `stop_workspace_session`, `cancel_task`.
 
 ## More detail
 

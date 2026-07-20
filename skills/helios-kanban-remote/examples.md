@@ -16,8 +16,9 @@ HK="bash scripts/hk.sh"
 
 ```bash
 $HK branches "$HELIOS_KANBAN_REPO_ID" --query develop
-$HK create-and-start "修复登录" --branch develop --desc "登录页 500"
-# returns url, target_branch, executor
+$HK create-and-start "修复登录" --branch develop --desc "登录页 500 @coding-standards"
+# or multi-repo:
+# $HK start "<task_id>" --repo "$REPO_A" --repo "$REPO_B:main"
 ```
 
 **User**: 怎么样了？

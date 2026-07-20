@@ -176,6 +176,17 @@ POST /api/task-attempts/summary
 
 Returns per-workspace diff stats, `has_pending_approval`, latest process status. `hk status <task_id>` composes task + workspaces + matching summaries.
 
+## Tags (`@tagname`)
+
+`GET /api/tags` returns `{ id, tag_name, content }`.
+
+In `hk tasks create/update --desc` and `hk follow-up`, `@tagname` is expanded to the tag content (same as MCP).
+
+```bash
+hk tags
+hk tasks create "Fix" --desc "Follow @coding-standards"
+```
+
 ## Executors (from default_profiles.json)
 
 `CLAUDE_CODE`, `AMP`, `GEMINI`, `CODEX`, `COPILOT`, `REASONIX`, `CURSOR_AGENT`, `QWEN_CODE`, `OPENCODE`, `ECHO`, and others.

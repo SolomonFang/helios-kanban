@@ -144,6 +144,65 @@ resolve_iteration() {
   echo "$iteration"
 }
 
+# Expand @tagname in text via GET /api/tags (same behavior as MCP create_task).
+expand_tags() {
+  local text="$1"
+  if [[ "$text" != *@* ]]; then
+    printf '%s' "$text"
+    return
+  fi
+  local tags
+  tags=$(api GET "/tags" 2>/dev/null || echo "[]")
+  if ! echo "$tags" | jq -e 'type == "array" and length > 0' >/dev/null 2>&1; then
+    printf '%s' "$text"
+    return
+  fi
+  jq -n --arg text "$text" --argjson tags "$tags" '
+    reduce $tags[] as $t ($text; gsub("@\($t.tag_name)"; $t.content))
+  ' -r
+}
+
+# Build repos JSON array for start/create-and-start.
+# Inputs: REPO_SPECS (bash array of "uuid" or "uuid:branch"), optional GLOBAL_BRANCH.
+# Each repo without an explicit branch uses default_target_branch (else GLOBAL_BRANCH/main).
+build_repos_json() {
+  local global_branch="${1:-}"
+  shift
+  local specs=("$@")
+  if [[ ${#specs[@]} -eq 0 ]]; then
+    local default_repo
+    default_repo="${HELIOS_KANBAN_REPO_ID:-}"
+    if [[ -z "$default_repo" ]]; then
+      echo "error: --repo is required (or set HELIOS_KANBAN_REPO_ID)" >&2
+      exit 1
+    fi
+    specs=("$default_repo")
+  fi
+
+  local arr="[]"
+  local spec repo_id branch
+  for spec in "${specs[@]}"; do
+    if [[ "$spec" == *:* ]]; then
+      repo_id="${spec%%:*}"
+      branch="${spec#*:}"
+    else
+      repo_id="$spec"
+      branch=""
+    fi
+    if [[ -z "$branch" ]]; then
+      if [[ -n "$global_branch" ]]; then
+        branch="$global_branch"
+      else
+        resolve_target_branch "$repo_id" ""
+        branch="$RESOLVED_BRANCH"
+      fi
+    fi
+    arr=$(jq -n --argjson a "$arr" --arg rid "$repo_id" --arg br "$branch" \
+      '$a + [{repo_id: $rid, target_branch: $br}]')
+  done
+  REPOS_JSON="$arr"
+}
+
 # Resolve latest session for a task_id (preferred) or workspace_id.
 # Sets RESOLVED_SESSION_ID, RESOLVED_WORKSPACE_ID, RESOLVED_TASK_ID, RESOLVED_SESSION_EXECUTOR
 resolve_latest_session_for() {
@@ -196,12 +255,13 @@ Commands:
   tasks update <task_id> [--title T] [--status S] [--desc T] [--iteration CODE]
   tasks cancel <task_id>
   tasks delete <task_id>
-  start <task_id> [--repo REPO] [--executor E] [--variant V] [--branch B]
-  create-and-start [project_id] <title> [--repo REPO] [--executor E] [--variant V] [--branch B] [--desc T] [--iteration CODE]
-  follow-up <task_id|workspace_id> <prompt...>   # auto-queues if agent running
+  start <task_id> [--repo ID|ID:branch]... [--executor E] [--variant V] [--branch B]
+  create-and-start [project_id] <title> [--repo ID|ID:branch]... [--executor E] [--variant V] [--branch B] [--desc T] [--iteration CODE]
+  follow-up <task_id|workspace_id> <prompt...>   # auto-queues if agent running; expands @tags
   status <task_id>
   workspaces [--task TASK_ID]
   stop <workspace_id>
+  tags
   approvals
   approve <approval_id> --process <execution_process_id>
   deny <approval_id> --process <execution_process_id> [--reason TEXT]
@@ -209,12 +269,14 @@ Commands:
 Notes:
   --executor optional → Settings default (config.executor_profile)
   --branch optional → repo.default_target_branch, else main
+  --repo may repeat; use ID:branch for per-repo base branch
   --iteration optional → HELIOS_KANBAN_ITERATION when unset
+  @tagname in --desc / follow-up expands via /api/tags
   cancel ≠ delete ≠ stop (see SKILL.md)
 
 Examples:
-  hk tasks create "Fix login" --iteration 260717
-  hk start <task_id> --branch develop
+  hk tasks create "Fix login" --desc "Use @coding-standards"
+  hk start <task_id> --repo <uuid1> --repo <uuid2>:develop
   hk follow-up <task_id> please also add unit tests
   hk status <task_id>
   hk approvals && hk approve <id> --process <ep_id>
@@ -339,6 +401,9 @@ cmd_tasks_create() {
     esac
   done
   iteration=$(resolve_iteration "$iteration")
+  if [[ -n "$desc" ]]; then
+    desc=$(expand_tags "$desc")
+  fi
 
   local payload task
   payload=$(jq -n \
@@ -372,7 +437,10 @@ cmd_tasks_update() {
   local payload="{}"
   [[ -n "$title" ]] && payload=$(echo "$payload" | jq --arg v "$title" '. + {title: $v}')
   [[ -n "$status" ]] && payload=$(echo "$payload" | jq --arg v "$status" '. + {status: $v}')
-  [[ -n "$desc" ]] && payload=$(echo "$payload" | jq --arg v "$desc" '. + {description: $v}')
+  if [[ -n "$desc" ]]; then
+    desc=$(expand_tags "$desc")
+    payload=$(echo "$payload" | jq --arg v "$desc" '. + {description: $v}')
+  fi
   if [[ "$has_iteration" -eq 1 ]]; then
     payload=$(echo "$payload" | jq --arg v "$iteration" '. + {iteration: $v}')
   fi
@@ -406,40 +474,38 @@ cmd_start() {
   require_jq
   local task_id="$1"
   shift
-  local executor="" variant="" repo_id="" branch=""
+  local executor="" variant="" branch=""
+  local repo_specs=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --executor) executor="$2"; shift 2 ;;
       --variant) variant="$2"; shift 2 ;;
-      --repo) repo_id="$2"; shift 2 ;;
+      --repo) repo_specs+=("$2"); shift 2 ;;
       --branch) branch="$2"; shift 2 ;;
       *) echo "unknown arg: $1" >&2; exit 1 ;;
     esac
   done
-  repo_id=$(resolve_repo_id "$repo_id")
   resolve_executor_profile "$executor" "$variant"
-  resolve_target_branch "$repo_id" "$branch"
+  build_repos_json "$branch" "${repo_specs[@]+"${repo_specs[@]}"}"
   local payload result project_id
   if [[ -n "$RESOLVED_VARIANT" ]]; then
     payload=$(jq -n \
       --arg tid "$task_id" --arg ex "$RESOLVED_EXECUTOR" --arg var "$RESOLVED_VARIANT" \
-      --arg rid "$repo_id" --arg br "$RESOLVED_BRANCH" \
-      '{task_id: $tid, executor_profile_id: {executor: $ex, variant: $var},
-        repos: [{repo_id: $rid, target_branch: $br}]}')
+      --argjson repos "$REPOS_JSON" \
+      '{task_id: $tid, executor_profile_id: {executor: $ex, variant: $var}, repos: $repos}')
   else
     payload=$(jq -n \
       --arg tid "$task_id" --arg ex "$RESOLVED_EXECUTOR" \
-      --arg rid "$repo_id" --arg br "$RESOLVED_BRANCH" \
-      '{task_id: $tid, executor_profile_id: {executor: $ex},
-        repos: [{repo_id: $rid, target_branch: $br}]}')
+      --argjson repos "$REPOS_JSON" \
+      '{task_id: $tid, executor_profile_id: {executor: $ex}, repos: $repos}')
   fi
   result=$(api POST "/task-attempts" -d "$payload")
   project_id=$(api GET "/tasks/${task_id}" | jq -r '.project_id')
   echo "$result" | jq \
     --arg url "$(task_url "$project_id" "$task_id")" \
-    --arg branch "$RESOLVED_BRANCH" \
+    --argjson repos "$REPOS_JSON" \
     --arg executor "$RESOLVED_EXECUTOR" \
-    '. + {url: $url, target_branch: $branch, executor: $executor}'
+    '. + {url: $url, repos: $repos, executor: $executor}'
 }
 
 cmd_create_and_start() {
@@ -459,22 +525,25 @@ cmd_create_and_start() {
     exit 1
   fi
 
-  local executor="" variant="" repo_id="" branch="" desc="" iteration=""
+  local executor="" variant="" branch="" desc="" iteration=""
+  local repo_specs=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --executor) executor="$2"; shift 2 ;;
       --variant) variant="$2"; shift 2 ;;
-      --repo) repo_id="$2"; shift 2 ;;
+      --repo) repo_specs+=("$2"); shift 2 ;;
       --branch) branch="$2"; shift 2 ;;
       --desc) desc="$2"; shift 2 ;;
       --iteration) iteration="$2"; shift 2 ;;
       *) echo "unknown arg: $1" >&2; exit 1 ;;
     esac
   done
-  repo_id=$(resolve_repo_id "$repo_id")
   iteration=$(resolve_iteration "$iteration")
+  if [[ -n "$desc" ]]; then
+    desc=$(expand_tags "$desc")
+  fi
   resolve_executor_profile "$executor" "$variant"
-  resolve_target_branch "$repo_id" "$branch"
+  build_repos_json "$branch" "${repo_specs[@]+"${repo_specs[@]}"}"
 
   local task_obj payload result
   task_obj=$(jq -n \
@@ -488,24 +557,22 @@ cmd_create_and_start() {
   if [[ -n "$RESOLVED_VARIANT" ]]; then
     payload=$(jq -n \
       --argjson task "$task_obj" --arg ex "$RESOLVED_EXECUTOR" --arg var "$RESOLVED_VARIANT" \
-      --arg rid "$repo_id" --arg br "$RESOLVED_BRANCH" \
-      '{task: $task, executor_profile_id: {executor: $ex, variant: $var},
-        repos: [{repo_id: $rid, target_branch: $br}]}')
+      --argjson repos "$REPOS_JSON" \
+      '{task: $task, executor_profile_id: {executor: $ex, variant: $var}, repos: $repos}')
   else
     payload=$(jq -n \
       --argjson task "$task_obj" --arg ex "$RESOLVED_EXECUTOR" \
-      --arg rid "$repo_id" --arg br "$RESOLVED_BRANCH" \
-      '{task: $task, executor_profile_id: {executor: $ex},
-        repos: [{repo_id: $rid, target_branch: $br}]}')
+      --argjson repos "$REPOS_JSON" \
+      '{task: $task, executor_profile_id: {executor: $ex}, repos: $repos}')
   fi
   result=$(api POST "/tasks/create-and-start" -d "$payload")
   local tid
   tid=$(echo "$result" | jq -r '.id // .task_id // empty')
   echo "$result" | jq \
     --arg url "$(task_url "$project_id" "$tid")" \
-    --arg branch "$RESOLVED_BRANCH" \
+    --argjson repos "$REPOS_JSON" \
     --arg executor "$RESOLVED_EXECUTOR" \
-    '. + {url: $url, target_branch: $branch, executor: $executor}'
+    '. + {url: $url, repos: $repos, executor: $executor}'
 }
 
 cmd_follow_up() {
@@ -521,6 +588,7 @@ cmd_follow_up() {
     echo "error: prompt required" >&2
     exit 1
   fi
+  prompt=$(expand_tags "$prompt")
 
   resolve_latest_session_for "$id"
 
@@ -641,6 +709,11 @@ cmd_stop() {
   api POST "/task-attempts/$1/stop" -d '{}'
 }
 
+cmd_tags() {
+  require_jq
+  api GET "/tags" | jq 'map({id, tag_name, content: (.content | .[0:120])})'
+}
+
 cmd_approvals() {
   require_jq
   api GET "/approvals"
@@ -727,6 +800,7 @@ case "$command" in
   status) cmd_status "$@" ;;
   workspaces) cmd_workspaces "$@" ;;
   stop) cmd_stop "$@" ;;
+  tags) cmd_tags ;;
   approvals) cmd_approvals ;;
   approve) cmd_approve "$@" ;;
   deny) cmd_deny "$@" ;;
