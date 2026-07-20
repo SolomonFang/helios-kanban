@@ -132,11 +132,16 @@ sudo apt-get update && sudo apt-get install -y jq
 
 1. Use existing env var if already set.
 2. Otherwise **ask the user once**: "请提供 Helios Kanban 地址，例如 `http://100.x.x.x:7964`"
-3. Optional: `HELIOS_KANBAN_PROJECT_ID` (default project UUID).
+3. Optional defaults (ask if user wants shortcuts):
+   - `HELIOS_KANBAN_PROJECT_ID` — default project UUID
+   - `HELIOS_KANBAN_REPO_ID` — default repo UUID
+   - `HELIOS_KANBAN_ITERATION` — default iteration code (e.g. `260717`)
 
 ```bash
 export HELIOS_KANBAN_URL="<user-provided-url>"
 # export HELIOS_KANBAN_PROJECT_ID="<uuid>"
+# export HELIOS_KANBAN_REPO_ID="<uuid>"
+# export HELIOS_KANBAN_ITERATION="260717"
 ```
 
 Persist (skip if already in profile):

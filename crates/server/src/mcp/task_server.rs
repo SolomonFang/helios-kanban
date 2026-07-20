@@ -34,6 +34,10 @@ pub struct CreateTaskRequest {
     pub title: String,
     #[schemars(description = "Optional description of the task")]
     pub description: Option<String>,
+    #[schemars(
+        description = "Optional iteration code to assign the task to (e.g. '260717'). Omit to leave unassigned."
+    )]
+    pub iteration: Option<String>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -167,6 +171,8 @@ pub struct TaskSummary {
     pub title: String,
     #[schemars(description = "Current status of the task")]
     pub status: String,
+    #[schemars(description = "Iteration code assigned to the task, if any")]
+    pub iteration: Option<String>,
     #[schemars(description = "When the task was created")]
     pub created_at: String,
     #[schemars(description = "When the task was last updated")]
@@ -183,6 +189,7 @@ impl TaskSummary {
             id: task.id.to_string(),
             title: task.title.to_string(),
             status: task.status.to_string(),
+            iteration: task.iteration.clone(),
             created_at: task.created_at.to_rfc3339(),
             updated_at: task.updated_at.to_rfc3339(),
             has_in_progress_attempt: Some(task.has_in_progress_attempt),
@@ -201,6 +208,8 @@ pub struct TaskDetails {
     pub description: Option<String>,
     #[schemars(description = "Current status of the task")]
     pub status: String,
+    #[schemars(description = "Iteration code assigned to the task, if any")]
+    pub iteration: Option<String>,
     #[schemars(description = "When the task was created")]
     pub created_at: String,
     #[schemars(description = "When the task was last updated")]
@@ -218,6 +227,7 @@ impl TaskDetails {
             title: task.title,
             description: task.description,
             status: task.status.to_string(),
+            iteration: task.iteration,
             created_at: task.created_at.to_rfc3339(),
             updated_at: task.updated_at.to_rfc3339(),
             has_in_progress_attempt: None,
@@ -250,6 +260,10 @@ pub struct UpdateTaskRequest {
     pub description: Option<String>,
     #[schemars(description = "New status: 'todo', 'inprogress', 'inreview', 'done', 'cancelled'")]
     pub status: Option<String>,
+    #[schemars(
+        description = "New iteration code (e.g. '260717'). Pass empty string to clear. Omit to keep existing."
+    )]
+    pub iteration: Option<String>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -579,7 +593,7 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Create a new task/ticket in a project. Always pass the `project_id` of the project you want to create the task in - it is required!"
+        description = "Create a new task/ticket in a project. Always pass the `project_id` of the project you want to create the task in - it is required! Optionally pass `iteration` (e.g. '260717') to assign the task to an iteration."
     )]
     async fn create_task(
         &self,
@@ -587,6 +601,7 @@ impl TaskServer {
             project_id,
             title,
             description,
+            iteration,
         }): Parameters<CreateTaskRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         // Expand @tagname references in description
@@ -595,20 +610,22 @@ impl TaskServer {
             None => None,
         };
 
+        let iteration = iteration.and_then(|s| {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+
         let url = self.url("/api/tasks");
 
-        let task: Task = match self
-            .send_json(
-                self.client
-                    .post(&url)
-                    .json(&CreateTask::from_title_description(
-                        project_id,
-                        title,
-                        expanded_description,
-                    )),
-            )
-            .await
-        {
+        let mut create =
+            CreateTask::from_title_description(project_id, title, expanded_description);
+        create.iteration = iteration;
+
+        let task: Task = match self.send_json(self.client.post(&url).json(&create)).await {
             Ok(t) => t,
             Err(e) => return Ok(e),
         };
@@ -915,7 +932,7 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Update an existing task/ticket's title, description, or status. `task_id` is required. `title`, `description`, and `status` are optional."
+        description = "Update an existing task/ticket's title, description, status, or iteration. `task_id` is required. `title`, `description`, `status`, and `iteration` are optional."
     )]
     async fn update_task(
         &self,
@@ -924,6 +941,7 @@ impl TaskServer {
             title,
             description,
             status,
+            iteration,
         }): Parameters<UpdateTaskRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let status = if let Some(ref status_str) = status {
@@ -952,7 +970,7 @@ impl TaskServer {
             status,
             parent_workspace_id: None,
             image_ids: None,
-            iteration: None,
+            iteration,
         };
         let url = self.url(&format!("/api/tasks/{}", task_id));
         let updated_task: Task = match self.send_json(self.client.put(&url).json(&payload)).await {

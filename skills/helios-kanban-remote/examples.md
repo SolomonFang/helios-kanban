@@ -1,49 +1,66 @@
 # Examples
 
-## Setup on bot host (Tailscale)
+## Setup
 
 ```bash
 export HELIOS_KANBAN_URL="http://100.64.0.5:7964"
 export HELIOS_KANBAN_PROJECT_ID="a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+export HELIOS_KANBAN_REPO_ID="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+export HELIOS_KANBAN_ITERATION="260717"
+HK="bash scripts/hk.sh"
 ```
 
-## Phone → Hermes conversation
+## Full remote loop
 
-**User**: 看看现在有哪些任务在进行？
+**User**: 260717 新建「修复登录」，基于 develop 跑起来
 
-**Agent**:
 ```bash
-bash scripts/hk.sh tasks list "$HELIOS_KANBAN_PROJECT_ID" --status inprogress
+$HK branches "$HELIOS_KANBAN_REPO_ID" --query develop
+$HK create-and-start "修复登录" --branch develop --desc "登录页 500"
+# returns url, target_branch, executor
 ```
 
-**Reply**: 当前有 2 个进行中的任务：1) 修复登录 bug（agent 运行中）2) 添加单元测试（等待审查）
+**User**: 怎么样了？
 
----
-
-**User**: 帮我新建一个任务，让 Claude 去重构 auth 模块
-
-**Agent**:
 ```bash
-bash scripts/hk.sh repos "$HELIOS_KANBAN_PROJECT_ID"
-bash scripts/hk.sh create-and-start "$HELIOS_KANBAN_PROJECT_ID" "重构 auth 模块" \
-  --executor CLAUDE_CODE --repo "<repo_id>" --desc "重构认证模块，保持 API 兼容"
+$HK status "<task_id>"
+# running, last_attempt_failed, workspace summaries (files/lines, pending approval)
 ```
 
-**Reply**: 已创建任务并启动 Claude Code，workspace ID: `...`。完成后请在电脑端审查 diff。
+**User**: 再跟它说加单测
 
----
-
-**User**: 停掉它
-
-**Agent**:
 ```bash
-bash scripts/hk.sh workspaces --task "<task_id>"
-bash scripts/hk.sh stop "<workspace_id>"
+$HK follow-up "<task_id>" 请补充单元测试并保持 API 兼容
+# mode=follow_up | queued
 ```
 
-## curl without script
+**User**: 有审批卡着
+
+```bash
+$HK approvals
+$HK approve "<approval_id>" --process "<execution_process_id>"
+# or: $HK deny "<approval_id>" --process "<ep_id>" --reason "too risky"
+```
+
+**User**: 停掉 / 取消
+
+```bash
+$HK workspaces --task "<task_id>"
+$HK stop "<workspace_id>"
+$HK tasks cancel "<task_id>"   # also stops workspaces
+```
+
+**User**: 找一下登录相关的 todo
+
+```bash
+$HK tasks list --status todo --query 登录
+```
+
+## curl snippets
 
 ```bash
 curl -s "$HELIOS_KANBAN_URL/api/health" | jq .
-curl -s "$HELIOS_KANBAN_URL/api/projects" | jq '.data'
+curl -s "$HELIOS_KANBAN_URL/api/info" | jq '.data.config.executor_profile'
+curl -s "$HELIOS_KANBAN_URL/api/approvals" | jq '.data'
+curl -s "$HELIOS_KANBAN_URL/api/repos/$HELIOS_KANBAN_REPO_ID/branches" | jq '.data[].name'
 ```

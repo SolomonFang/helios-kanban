@@ -2,11 +2,11 @@
 name: helios-kanban-remote
 description: >-
   Remote control Helios Kanban (helios-kanban) via REST API — list/create/update
-  tasks, start/stop coding agents, check status. Use when the user wants to
-  control kanban from phone/chat, mentions Helios Kanban / helios-kanban /
-  vibe-kanban remotely, or asks to create tasks, start agents, or check progress
-  on a running instance. If the skill is not installed yet, read and follow
-  INSTALL.md to self-install from GitHub first.
+  tasks, start/stop coding agents, follow-up, check status, handle approvals.
+  Use when the user wants to control kanban from phone/chat, mentions Helios
+  Kanban / helios-kanban / vibe-kanban remotely, or asks to create tasks, start
+  agents, or check progress on a running instance. If the skill is not installed
+  yet, read and follow INSTALL.md to self-install from GitHub first.
 ---
 
 # Helios Kanban Remote Control
@@ -23,27 +23,67 @@ Control a running [Helios Kanban](https://github.com/SolomonFang/vibe-kanban) in
 3. **Env vars** (set on the bot host):
    - `HELIOS_KANBAN_URL` — base URL, e.g. `http://100.x.x.x:7964`
    - `HELIOS_KANBAN_PROJECT_ID` — optional default project UUID
+   - `HELIOS_KANBAN_REPO_ID` — optional default repo UUID
+   - `HELIOS_KANBAN_ITERATION` — optional default iteration (e.g. `260717`)
 
 ## Quick workflow
-
-When the user asks in natural language, translate to API calls:
 
 | User intent | Action |
 |-------------|--------|
 | "有哪些项目" | `hk projects` |
-| "看看进行中的任务" | `hk tasks list $PROJECT --status inprogress` |
-| "创建一个任务：修复登录 bug" | `hk tasks create $PROJECT "修复登录 bug"` |
-| "用 Claude 跑这个任务" | `hk start <task_id> --executor CLAUDE_CODE --repo <repo_id>` |
-| "新建并立即启动" | `hk create-and-start $PROJECT "标题" --executor CLAUDE_CODE --repo <repo_id>` |
-| "停掉当前 agent" | find workspace → `hk stop <workspace_id>` |
-| "任务详情" | `hk tasks get <task_id>` |
+| "默认 agent / 仓库" | `hk info`；`hk repos` |
+| "看看进行中的" | `hk tasks list --status inprogress` |
+| "找登录相关任务" | `hk tasks list --query 登录` |
+| "260717 迭代" | `hk tasks list --iteration 260717` |
+| "创建任务" | `hk tasks create "标题"`（自动带 iteration/url） |
+| "有哪些分支" | `hk branches <repo_id> [--query develop]` |
+| "基于 develop 启动" | `hk start <task_id> --branch develop` |
+| "新建并启动" | `hk create-and-start "标题"` |
+| "再跟它说一句…" | `hk follow-up <task_id> <prompt>`（运行中自动排队） |
+| "跑得怎么样了" | `hk status <task_id>` |
+| "有没有待审批" | `hk approvals` → `hk approve/deny … --process <ep_id>` |
+| "停掉 agent" | `hk workspaces --task <id>` → `hk stop <workspace_id>` |
+| "取消任务" | `hk tasks cancel <task_id>`（会先 stop） |
+| "删除任务" | 确认后 → `hk tasks delete <task_id>` |
 | "标记完成" | `hk tasks update <task_id> --status done` |
 
-**Always** run `hk projects` first if `HELIOS_KANBAN_PROJECT_ID` is unset. Cache `project_id` and `repo_id` in the conversation.
+Cache `project_id` / `repo_id` in the conversation. Prefer env defaults so commands stay short.
 
-## Use the CLI script (preferred)
+## Complete lifecycle
 
-From this skill directory:
+```text
+1. hk repos / hk branches <repo>
+2. hk tasks create "标题" [--iteration CODE]
+3. hk start <task_id> [--branch B] [--repo R]
+     └─ or: hk create-and-start "标题" …
+4. hk status <task_id>                  # progress / diff summary
+5. hk follow-up <task_id> <prompt>      # continue chatting
+6. hk approvals → approve | deny
+7a. hk stop <workspace_id>
+7b. hk tasks cancel <task_id>
+7c. hk tasks delete <task_id>           # confirm first
+7d. hk tasks update --status done
+```
+
+### Defaults
+
+| Flag | When omitted |
+|------|----------------|
+| `--executor` | Settings → `config.executor_profile` via `hk info` |
+| `--branch` | `repo.default_target_branch`, else `main` |
+| `--repo` | `HELIOS_KANBAN_REPO_ID` |
+| `--iteration` | `HELIOS_KANBAN_ITERATION` |
+| `project_id` arg | `HELIOS_KANBAN_PROJECT_ID` |
+
+### cancel vs delete vs stop
+
+| Intent | Command | Effect |
+|--------|---------|--------|
+| 停 agent | `hk stop` | Kills agent; task remains |
+| 取消任务 | `hk tasks cancel` | Stops workspaces + status=`cancelled` |
+| 删除任务 | `hk tasks delete` | Permanent — **confirm first** |
+
+## Use the CLI
 
 ```bash
 bash scripts/hk.sh <command> [args]
@@ -53,23 +93,21 @@ Requires `curl` and `jq`. See `scripts/hk.sh --help`.
 
 ## Response format for chat
 
-Reply concisely in the user's language. After each action, summarize:
-
 ```markdown
 **项目**: {name}
 **任务**: {title} (`{id}`)
-**状态**: {status} | agent 运行中: {yes/no}
+**迭代**: {iteration or —}
+**状态**: {status} | running: {yes/no} | failed: {yes/no}
+**分支**: {target_branch}
+**Executor**: {executor}
+**URL**: {url}
 **下一步**: {suggestion}
 ```
 
-On error, show the API `message` and suggest checking `HELIOS_KANBAN_URL` or running `hk health`.
+## Executor names (only when user names one)
 
-## Executor names
-
-Map user-friendly names to API values:
-
-| User says | `--executor` value |
-|-----------|-------------------|
+| User says | `--executor` |
+|-----------|--------------|
 | Claude / Claude Code | `CLAUDE_CODE` |
 | Codex | `CODEX` |
 | Gemini | `GEMINI` |
@@ -78,35 +116,35 @@ Map user-friendly names to API values:
 | Cursor | `CURSOR_AGENT` |
 | Copilot | `COPILOT` |
 
-Optional `--variant`: `DEFAULT`, `PLAN`, `OPUS`, etc. (see `reference.md`).
-
 ## Task statuses
 
 `todo` | `inprogress` | `inreview` | `done` | `cancelled`
 
 ## Safety rules
 
-1. **Confirm before destructive ops** — deleting tasks, force push, merge (not exposed in CLI; use Web UI).
-2. **Don't expose kanban to public internet** without auth; prefer Tailscale.
-3. **Phone = dispatch only** — tell user to review diffs on desktop before merge.
-4. If `hk health` fails, stop and report connectivity issue.
+1. Confirm before `tasks delete` — prefer `cancel`.
+2. Prefer Tailscale; don’t expose kanban publicly without auth.
+3. Phone = dispatch / follow-up / approve — review diffs & merge on desktop.
+4. If `hk health` fails, stop and report connectivity.
+5. Single `--repo` in CLI; multi-repo → Web UI / raw API.
+6. PR / push / merge / rebase: tell user to use desktop Web UI.
+
+## Out of scope (point user to Web UI)
+
+- Create/merge PR, push, rebase, conflict resolution
+- Full diff viewer / open in editor
+- Multi-repo workspace create
 
 ## Not installed yet?
 
-**Read and execute [INSTALL.md](INSTALL.md) first.** The skill lives in this repo at `skills/helios-kanban-remote/`.
-
-Give any agent:
+**Read and execute [INSTALL.md](INSTALL.md) first.**
 
 ```
 请阅读并执行安装文档：
 https://github.com/SolomonFang/vibe-kanban/blob/hly-dev/skills/helios-kanban-remote/INSTALL.md
 ```
 
-Or simply: `安装 Helios Kanban 远程控制技能：https://github.com/SolomonFang/vibe-kanban`
-
 ## MCP alternative (same machine only)
-
-If the agent runs **on the same host** as Helios Kanban and supports MCP:
 
 ```json
 {
@@ -117,7 +155,7 @@ If the agent runs **on the same host** as Helios Kanban and supports MCP:
 }
 ```
 
-MCP tools: `list_projects`, `list_tasks`, `create_task`, `start_workspace_session`, `get_task`, `update_task`, `delete_task`. Prefer MCP when co-located; use HTTP/`hk.sh` for remote phone control.
+Prefer MCP when co-located; use HTTP/`hk.sh` for remote phone control. MCP still requires explicit `executor` for start — resolve via `GET /api/info` first.
 
 ## More detail
 

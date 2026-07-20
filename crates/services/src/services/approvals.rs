@@ -307,6 +307,11 @@ impl Approvals {
             })
             .collect()
     }
+
+    /// Snapshot of currently pending approvals (for REST/CLI clients).
+    pub fn list_pending(&self) -> Vec<ApprovalInfo> {
+        self.pending_infos()
+    }
 }
 
 pub(crate) async fn ensure_task_in_review(pool: &SqlitePool, execution_process_id: Uuid) {

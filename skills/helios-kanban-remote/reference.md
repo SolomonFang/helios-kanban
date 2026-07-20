@@ -15,8 +15,11 @@ Read `.data` on success; read `.message` on failure.
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/health` | Liveness check |
+| GET | `/info` | Server/user config (includes default `executor_profile`) |
 | GET | `/projects` | List projects |
 | GET | `/projects/{project_id}/repositories` | List repos |
+| GET | `/repos/{repo_id}` | Repo details (`default_target_branch`) |
+| GET | `/repos/{repo_id}/branches` | List branches |
 | GET | `/tasks?project_id={uuid}` | List tasks |
 | POST | `/tasks` | Create task |
 | GET | `/tasks/{task_id}` | Get task |
@@ -25,7 +28,33 @@ Read `.data` on success; read `.message` on failure.
 | POST | `/tasks/create-and-start` | Create task + start agent |
 | POST | `/task-attempts` | Start agent on existing task |
 | GET | `/task-attempts?task_id={uuid}` | List workspaces for task |
+| POST | `/task-attempts/summary` | Workspace summaries (diff/approvals) |
 | POST | `/task-attempts/{workspace_id}/stop` | Stop running agent |
+| GET | `/sessions?workspace_id={uuid}` | List sessions |
+| POST | `/sessions/{session_id}/follow-up` | Send follow-up prompt |
+| POST | `/sessions/{session_id}/queue` | Queue follow-up while running |
+| GET | `/approvals` | List pending approvals |
+| POST | `/approvals/{id}/respond` | Approve / deny |
+
+## Default executor profile
+
+```bash
+hk info | jq '.config.executor_profile'
+```
+
+```json
+GET /api/info
+{
+  "config": {
+    "executor_profile": {
+      "executor": "CODEX",
+      "variant": "DEFAULT"
+    }
+  }
+}
+```
+
+Use this when starting an agent unless the user names a specific executor. Fresh installs default to `CLAUDE_CODE` until changed in Settings → Agents.
 
 ## Create task
 
@@ -35,7 +64,8 @@ POST /api/tasks
   "project_id": "uuid",
   "title": "Fix login bug",
   "description": "Optional details",
-  "status": "todo"
+  "status": "todo",
+  "iteration": "260717"
 }
 ```
 
@@ -46,7 +76,8 @@ PUT /api/tasks/{task_id}
 {
   "status": "inprogress",
   "title": "New title",
-  "description": "Updated desc"
+  "description": "Updated desc",
+  "iteration": "260717"
 }
 ```
 
@@ -57,7 +88,7 @@ POST /api/task-attempts
 {
   "task_id": "uuid",
   "executor_profile_id": {
-    "executor": "CLAUDE_CODE",
+    "executor": "CODEX",
     "variant": "DEFAULT"
   },
   "repos": [
@@ -65,6 +96,10 @@ POST /api/task-attempts
   ]
 }
 ```
+
+Prefer reading `executor` / `variant` from `GET /api/info` → `config.executor_profile` rather than hardcoding.
+
+`target_branch` is the base branch. Prefer `GET /api/repos/{repo_id}` → `default_target_branch` when the user does not name a branch.
 
 ## Create and start (one shot)
 
@@ -74,17 +109,72 @@ POST /api/tasks/create-and-start
   "task": {
     "project_id": "uuid",
     "title": "Fix login bug",
-    "description": "..."
+    "description": "...",
+    "iteration": "260717"
   },
   "executor_profile_id": {
-    "executor": "CLAUDE_CODE",
+    "executor": "CODEX",
     "variant": null
   },
   "repos": [
-    { "repo_id": "uuid", "target_branch": "main" }
+    { "repo_id": "uuid", "target_branch": "develop" }
   ]
 }
 ```
+
+## Cancel vs delete vs stop
+
+| Action | Method | Path / CLI |
+|--------|--------|------------|
+| Soft cancel | `PUT` | `/tasks/{id}` `{ "status": "cancelled" }` → `hk tasks cancel` |
+| Hard delete | `DELETE` | `/tasks/{id}` → `hk tasks delete` (confirm first) |
+| Stop agent | `POST` | `/task-attempts/{workspace_id}/stop` → `hk stop` |
+
+## Follow-up
+
+```json
+POST /api/sessions/{session_id}/follow-up
+{
+  "prompt": "请补充单元测试",
+  "executor_profile_id": { "executor": "CODEX", "variant": null }
+}
+```
+
+If the agent is already running, queue instead:
+
+```json
+POST /api/sessions/{session_id}/queue
+{
+  "message": "请补充单元测试",
+  "executor_profile_id": { "executor": "CODEX" }
+}
+```
+
+`hk follow-up` picks queue vs follow-up automatically.
+
+## Approvals
+
+```json
+GET /api/approvals
+→ [{ "approval_id", "tool_name", "execution_process_id", "is_question", ... }]
+
+POST /api/approvals/{approval_id}/respond
+{
+  "execution_process_id": "uuid",
+  "status": { "status": "approved" }
+}
+```
+
+Deny: `{ "status": "denied", "reason": "optional" }`. Question-type approvals (`is_question: true`) need the Web UI for structured answers.
+
+## Status / summary
+
+```json
+POST /api/task-attempts/summary
+{ "archived": false }
+```
+
+Returns per-workspace diff stats, `has_pending_approval`, latest process status. `hk status <task_id>` composes task + workspaces + matching summaries.
 
 ## Executors (from default_profiles.json)
 

@@ -5,6 +5,7 @@ use axum::{
     routing::{get, post},
 };
 use deployment::Deployment;
+use services::services::approvals::ApprovalInfo;
 use utils::{
     approvals::{ApprovalOutcome, ApprovalResponse},
     log_msg::LogMsg,
@@ -12,6 +13,12 @@ use utils::{
 };
 
 use crate::DeploymentImpl;
+
+pub async fn list_approvals(
+    State(deployment): State<DeploymentImpl>,
+) -> ResponseJson<ApiResponse<Vec<ApprovalInfo>>> {
+    ResponseJson(ApiResponse::success(deployment.approvals().list_pending()))
+}
 
 pub async fn respond_to_approval(
     State(deployment): State<DeploymentImpl>,
@@ -91,6 +98,7 @@ async fn handle_approvals_ws(
 
 pub fn router() -> Router<DeploymentImpl> {
     Router::new()
+        .route("/approvals", get(list_approvals))
         .route("/approvals/{id}/respond", post(respond_to_approval))
         .route("/approvals/stream/ws", get(stream_approvals_ws))
 }
