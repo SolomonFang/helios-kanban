@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useProjects } from '@/hooks/useProjects';
@@ -31,11 +32,13 @@ import type { Project, Repo, UpdateProject } from 'shared/types';
 
 interface ProjectFormState {
   name: string;
+  description: string;
 }
 
 function projectToFormState(project: Project): ProjectFormState {
   return {
     name: project.name,
+    description: project.description ?? '',
   };
 }
 
@@ -292,6 +295,7 @@ export function ProjectSettings() {
     try {
       const updateData: UpdateProject = {
         name: draft.name.trim(),
+        description: draft.description.trim(),
       };
 
       updateProject.mutate({
@@ -422,6 +426,26 @@ export function ProjectSettings() {
                 />
                 <p className="text-sm text-muted-foreground">
                   {t('settings.projects.general.name.helper')}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="project-description">
+                  {t('settings.projects.general.projectDescription.label')}
+                </Label>
+                <Textarea
+                  id="project-description"
+                  value={draft.description}
+                  onChange={(e) =>
+                    updateDraft({ description: e.target.value })
+                  }
+                  placeholder={t(
+                    'settings.projects.general.projectDescription.placeholder'
+                  )}
+                  rows={4}
+                />
+                <p className="text-sm text-muted-foreground">
+                  {t('settings.projects.general.projectDescription.helper')}
                 </p>
               </div>
 

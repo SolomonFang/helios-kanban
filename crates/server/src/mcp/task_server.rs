@@ -51,6 +51,12 @@ pub struct ProjectSummary {
     pub id: String,
     #[schemars(description = "The name of the project")]
     pub name: String,
+    #[schemars(
+        description = "Optional description of what this project is for — use this to decide where to create tasks"
+    )]
+    pub description: Option<String>,
+    #[schemars(description = "Repository names linked to this project (summary)")]
+    pub repos: Vec<String>,
     #[schemars(description = "When the project was created")]
     pub created_at: String,
     #[schemars(description = "When the project was last updated")]
@@ -58,14 +64,44 @@ pub struct ProjectSummary {
 }
 
 impl ProjectSummary {
-    fn from_project(project: Project) -> Self {
+    fn from_project_with_repos(project: Project, repos: Vec<String>) -> Self {
         Self {
             id: project.id.to_string(),
             name: project.name,
+            description: project.description,
+            repos,
             created_at: project.created_at.to_rfc3339(),
             updated_at: project.updated_at.to_rfc3339(),
         }
     }
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetProjectRequest {
+    #[schemars(description = "The ID of the project to retrieve")]
+    pub project_id: Uuid,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct GetProjectResponse {
+    pub project: ProjectSummary,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateProjectRequest {
+    #[schemars(description = "The ID of the project to update")]
+    pub project_id: Uuid,
+    #[schemars(description = "New project name")]
+    pub name: Option<String>,
+    #[schemars(
+        description = "New project description for humans/agents. Pass empty string to clear. Omit to keep existing."
+    )]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct UpdateProjectResponse {
+    pub project: ProjectSummary,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -634,6 +670,26 @@ impl TaskServer {
             .unwrap_or_else(|| "main".to_string()))
     }
 
+    async fn project_repo_names(&self, project_id: Uuid) -> Result<Vec<String>, CallToolResult> {
+        let url = self.url(&format!("/api/projects/{}/repositories", project_id));
+        let repos: Vec<Repo> = self.send_json(self.client.get(&url)).await?;
+        Ok(repos
+            .into_iter()
+            .map(|r| {
+                if r.display_name.trim().is_empty() {
+                    r.name
+                } else {
+                    r.display_name
+                }
+            })
+            .collect())
+    }
+
+    async fn project_summary(&self, project: Project) -> Result<ProjectSummary, CallToolResult> {
+        let repos = self.project_repo_names(project.id).await?;
+        Ok(ProjectSummary::from_project_with_repos(project, repos))
+    }
+
     /// Expands @tagname references in text by replacing them with tag content.
     /// Returns the original text if expansion fails (e.g., network error).
     /// Unknown tags are left as-is (not expanded, not an error).
@@ -742,7 +798,9 @@ impl TaskServer {
         })
     }
 
-    #[tool(description = "List all the available projects")]
+    #[tool(
+        description = "List all available projects with description and linked repo names. Read descriptions to decide which project_id to create tasks in."
+    )]
     async fn list_projects(&self) -> Result<CallToolResult, ErrorData> {
         let url = self.url("/api/projects");
         let projects: Vec<Project> = match self.send_json(self.client.get(&url)).await {
@@ -750,10 +808,13 @@ impl TaskServer {
             Err(e) => return Ok(e),
         };
 
-        let project_summaries: Vec<ProjectSummary> = projects
-            .into_iter()
-            .map(ProjectSummary::from_project)
-            .collect();
+        let mut project_summaries = Vec::with_capacity(projects.len());
+        for project in projects {
+            match self.project_summary(project).await {
+                Ok(summary) => project_summaries.push(summary),
+                Err(e) => return Ok(e),
+            }
+        }
 
         let response = ListProjectsResponse {
             count: project_summaries.len(),
@@ -761,6 +822,49 @@ impl TaskServer {
         };
 
         TaskServer::success(&response)
+    }
+
+    #[tool(
+        description = "Get a project by id, including description and linked repository names."
+    )]
+    async fn get_project(
+        &self,
+        Parameters(GetProjectRequest { project_id }): Parameters<GetProjectRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let url = self.url(&format!("/api/projects/{}", project_id));
+        let project: Project = match self.send_json(self.client.get(&url)).await {
+            Ok(p) => p,
+            Err(e) => return Ok(e),
+        };
+        let summary = match self.project_summary(project).await {
+            Ok(s) => s,
+            Err(e) => return Ok(e),
+        };
+        TaskServer::success(&GetProjectResponse { project: summary })
+    }
+
+    #[tool(
+        description = "Update a project's name and/or description. Use description so other agents know when to create tasks in this project."
+    )]
+    async fn update_project(
+        &self,
+        Parameters(UpdateProjectRequest {
+            project_id,
+            name,
+            description,
+        }): Parameters<UpdateProjectRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let payload = db::models::project::UpdateProject { name, description };
+        let url = self.url(&format!("/api/projects/{}", project_id));
+        let project: Project = match self.send_json(self.client.put(&url).json(&payload)).await {
+            Ok(p) => p,
+            Err(e) => return Ok(e),
+        };
+        let summary = match self.project_summary(project).await {
+            Ok(s) => s,
+            Err(e) => return Ok(e),
+        };
+        TaskServer::success(&UpdateProjectResponse { project: summary })
     }
 
     #[tool(description = "List all repositories for a project. `project_id` is required!")]
@@ -1212,7 +1316,7 @@ impl TaskServer {
 #[tool_handler]
 impl ServerHandler for TaskServer {
     fn get_info(&self) -> ServerInfo {
-        let mut instruction = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. You can get project ids by using `list projects`. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_workspace_session', 'stop_workspace_session', 'get_task', 'update_task', 'cancel_task', 'delete_task', 'list_repos', 'get_repo', 'update_setup_script', 'update_cleanup_script', 'update_dev_server_script'. Omit executor on start_workspace_session to use Settings default; omit base_branch to use repo default_target_branch. Prefer cancel_task over delete_task. Make sure to pass `project_id`, `task_id`, or `repo_id` where required.".to_string();
+        let mut instruction = "A task and project management server. Always call `list_projects` first and read each project's `description` (and `repos`) to choose the correct `project_id` before creating tasks. TOOLS: 'list_projects', 'get_project', 'update_project', 'list_tasks', 'create_task', 'start_workspace_session', 'stop_workspace_session', 'get_task', 'update_task', 'cancel_task', 'delete_task', 'list_repos', 'get_repo', 'update_setup_script', 'update_cleanup_script', 'update_dev_server_script'. Omit executor on start_workspace_session to use Settings default; omit base_branch to use repo default_target_branch. Prefer cancel_task over delete_task.".to_string();
         if self.context.is_some() {
             let context_instruction = "Use 'get_context' to fetch project/task/workspace metadata for the active Vibe Kanban workspace session when available.";
             instruction = format!("{} {}", context_instruction, instruction);

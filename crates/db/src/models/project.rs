@@ -21,6 +21,8 @@ pub enum ProjectError {
 pub struct Project {
     pub id: Uuid,
     pub name: String,
+    /// Human/agent-facing summary of what this project is for.
+    pub description: Option<String>,
     pub default_agent_working_dir: Option<String>,
     pub remote_project_id: Option<Uuid>,
     #[ts(type = "Date")]
@@ -32,12 +34,17 @@ pub struct Project {
 #[derive(Debug, Clone, Deserialize, TS)]
 pub struct CreateProject {
     pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
     pub repositories: Vec<CreateProjectRepo>,
 }
 
-#[derive(Debug, Deserialize, TS)]
+#[derive(Debug, Serialize, Deserialize, TS)]
 pub struct UpdateProject {
     pub name: Option<String>,
+    /// Pass Some("") to clear; omit (None) to keep existing.
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Serialize, TS)]
@@ -69,6 +76,7 @@ impl Project {
             Project,
             r#"SELECT id as "id!: Uuid",
                       name,
+                      description,
                       default_agent_working_dir,
                       remote_project_id as "remote_project_id: Uuid",
                       created_at as "created_at!: DateTime<Utc>",
@@ -86,6 +94,7 @@ impl Project {
             Project,
             r#"
             SELECT p.id as "id!: Uuid", p.name,
+                   p.description,
                    p.default_agent_working_dir,
                    p.remote_project_id as "remote_project_id: Uuid",
                    p.created_at as "created_at!: DateTime<Utc>", p.updated_at as "updated_at!: DateTime<Utc>"
@@ -109,6 +118,7 @@ impl Project {
             Project,
             r#"SELECT id as "id!: Uuid",
                       name,
+                      description,
                       default_agent_working_dir,
                       remote_project_id as "remote_project_id: Uuid",
                       created_at as "created_at!: DateTime<Utc>",
@@ -126,6 +136,7 @@ impl Project {
             Project,
             r#"SELECT id as "id!: Uuid",
                       name,
+                      description,
                       default_agent_working_dir,
                       remote_project_id as "remote_project_id: Uuid",
                       created_at as "created_at!: DateTime<Utc>",
@@ -146,6 +157,7 @@ impl Project {
             Project,
             r#"SELECT id as "id!: Uuid",
                       name,
+                      description,
                       default_agent_working_dir,
                       remote_project_id as "remote_project_id: Uuid",
                       created_at as "created_at!: DateTime<Utc>",
@@ -164,22 +176,30 @@ impl Project {
         data: &CreateProject,
         project_id: Uuid,
     ) -> Result<Self, sqlx::Error> {
+        let description = data
+            .description
+            .as_ref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty());
         sqlx::query_as!(
             Project,
             r#"INSERT INTO projects (
                     id,
-                    name
+                    name,
+                    description
                 ) VALUES (
-                    $1, $2
+                    $1, $2, $3
                 )
                 RETURNING id as "id!: Uuid",
                           name,
+                          description,
                           default_agent_working_dir,
                           remote_project_id as "remote_project_id: Uuid",
                           created_at as "created_at!: DateTime<Utc>",
                           updated_at as "updated_at!: DateTime<Utc>""#,
             project_id,
             data.name,
+            description,
         )
         .fetch_one(executor)
         .await
@@ -195,20 +215,27 @@ impl Project {
             .ok_or(sqlx::Error::RowNotFound)?;
 
         let name = payload.name.clone().unwrap_or(existing.name);
+        let description = match &payload.description {
+            Some(s) if s.trim().is_empty() => None,
+            Some(s) => Some(s.trim().to_string()),
+            None => existing.description,
+        };
 
         sqlx::query_as!(
             Project,
             r#"UPDATE projects
-               SET name = $2
+               SET name = $2, description = $3
                WHERE id = $1
                RETURNING id as "id!: Uuid",
                          name,
+                         description,
                          default_agent_working_dir,
                          remote_project_id as "remote_project_id: Uuid",
                          created_at as "created_at!: DateTime<Utc>",
                          updated_at as "updated_at!: DateTime<Utc>""#,
             id,
             name,
+            description,
         )
         .fetch_one(pool)
         .await

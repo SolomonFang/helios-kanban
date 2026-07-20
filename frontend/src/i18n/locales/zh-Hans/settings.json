@@ -394,6 +394,11 @@
           "placeholder": "输入项目名称",
           "helper": "此项目的显示名称。"
         },
+        "projectDescription": {
+          "label": "项目说明",
+          "placeholder": "这个项目是做什么的？Agent 什么时候应该在这里创建任务？",
+          "helper": "会通过 MCP 展示给 Agent，方便它们选择正确的项目。请写简短、具体。"
+        },
         "repoPath": {
           "label": "Git 仓库路径",
           "placeholder": "/path/to/your/existing/repo",

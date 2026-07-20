@@ -30,7 +30,7 @@ Control a running [Helios Kanban](https://github.com/SolomonFang/vibe-kanban) in
 
 | User intent | Action |
 |-------------|--------|
-| "有哪些项目" | `hk projects` |
+| "有哪些项目" | `hk projects`（看 `description` + `repos` 选项目） |
 | "默认 agent / 仓库" | `hk info`；`hk repos` |
 | "看看进行中的" | `hk tasks list --status inprogress` |
 | "找登录相关任务" | `hk tasks list --query 登录` |

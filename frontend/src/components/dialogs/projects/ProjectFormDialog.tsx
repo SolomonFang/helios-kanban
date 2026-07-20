@@ -45,6 +45,7 @@ const ProjectFormDialogImpl = NiceModal.create<ProjectFormDialogProps>(() => {
 
       const createData: CreateProject = {
         name: projectName,
+        description: null,
         repositories: [{ display_name: projectName, git_repo_path: repo.path }],
       };
 

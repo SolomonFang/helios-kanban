@@ -394,6 +394,11 @@
           "placeholder": "輸入專案名稱",
           "helper": "此專案的顯示名稱。"
         },
+        "projectDescription": {
+          "label": "Project Description",
+          "placeholder": "What is this project for? When should agents create tasks here?",
+          "helper": "Shown to agents via MCP so they can pick the right project."
+        },
         "repoPath": {
           "label": "Git 儲存庫路徑",
           "placeholder": "/path/to/your/existing/repo",

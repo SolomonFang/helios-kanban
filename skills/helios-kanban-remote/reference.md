@@ -16,7 +16,9 @@ Read `.data` on success; read `.message` on failure.
 |--------|------|---------|
 | GET | `/health` | Liveness check |
 | GET | `/info` | Server/user config (includes default `executor_profile`) |
-| GET | `/projects` | List projects |
+| GET | `/projects` | List projects (`description`, repos via separate call) |
+| GET | `/projects/{project_id}` | Get project |
+| PUT | `/projects/{project_id}` | Update project (`name`, `description`) |
 | GET | `/projects/{project_id}/repositories` | List repos |
 | GET | `/repos/{repo_id}` | Repo details (`default_target_branch`) |
 | GET | `/repos/{repo_id}/branches` | List branches |
@@ -41,6 +43,22 @@ Read `.data` on success; read `.message` on failure.
 ```bash
 hk info | jq '.config.executor_profile'
 ```
+
+## Project description (for agents)
+
+Projects may include a human/agent-facing `description`. Use it (with linked repo names) to choose `project_id` before creating tasks.
+
+```bash
+hk projects
+hk projects update <project_id> --description "Helios Kanban app — create tasks here for UI/API work"
+```
+
+```json
+PUT /api/projects/{project_id}
+{ "description": "What this project is for" }
+```
+
+Pass `""` to clear. Omit the field to keep the existing value.
 
 ```json
 GET /api/info

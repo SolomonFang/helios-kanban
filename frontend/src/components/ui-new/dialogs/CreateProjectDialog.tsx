@@ -11,6 +11,7 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { WarningIcon } from '@phosphor-icons/react';
 import { CreateProject, Project } from 'shared/types';
@@ -29,6 +30,7 @@ const CreateProjectDialogImpl = NiceModal.create<CreateProjectDialogProps>(
     const { t } = useTranslation(['tasks', 'common']);
     const modal = useModal();
     const [name, setName] = useState('');
+    const [description, setDescription] = useState('');
 
     const { createProject } = useProjectMutations({
       onCreateSuccess: (project) => {
@@ -45,6 +47,7 @@ const CreateProjectDialogImpl = NiceModal.create<CreateProjectDialogProps>(
     useEffect(() => {
       if (modal.visible) {
         setName('');
+        setDescription('');
       }
     }, [modal.visible]);
 
@@ -53,6 +56,7 @@ const CreateProjectDialogImpl = NiceModal.create<CreateProjectDialogProps>(
 
       const createData: CreateProject = {
         name: name.trim(),
+        description: description.trim() || null,
         repositories: [],
       };
 
@@ -98,6 +102,26 @@ const CreateProjectDialogImpl = NiceModal.create<CreateProjectDialogProps>(
               onKeyDown={handleKeyDown}
               placeholder={t('projects.create.form.namePlaceholder')}
               autoFocus
+              disabled={createProject.isPending}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="project-description">
+              {t(
+                'projects.create.form.descriptionLabel',
+                'Project description'
+              )}
+            </Label>
+            <Textarea
+              id="project-description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={t(
+                'projects.create.form.descriptionPlaceholder',
+                'What is this project for? Helps agents choose the right project.'
+              )}
+              rows={3}
               disabled={createProject.isPending}
             />
           </div>

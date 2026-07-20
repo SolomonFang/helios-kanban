@@ -247,6 +247,7 @@ Commands:
   health
   info
   projects
+  projects update <project_id> [--name TEXT] [--description TEXT]
   repos [project_id]
   branches <repo_id> [--query TEXT]
   tasks list [project_id] [--status S] [--iteration CODE] [--query TEXT] [--limit N]
@@ -295,7 +296,42 @@ cmd_info() {
 
 cmd_projects() {
   require_jq
-  api GET "/projects"
+  if [[ "${1:-}" == "update" ]]; then
+    shift
+    cmd_projects_update "$@"
+    return
+  fi
+  local projects
+  projects=$(api GET "/projects")
+  # Enrich with repo names for agent routing
+  echo "$projects" | jq -c '.[]' | while read -r row; do
+    local pid
+    pid=$(echo "$row" | jq -r '.id')
+    local repos
+    repos=$(api GET "/projects/${pid}/repositories" 2>/dev/null || echo "[]")
+    echo "$row" | jq --argjson repos "$repos" \
+      '. + {repos: [$repos[] | (.display_name // .name)], description: (.description // null)}'
+  done | jq -s '.'
+}
+
+cmd_projects_update() {
+  require_jq
+  local project_id="$1"
+  shift
+  local name="" description="" has_description=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --name) name="$2"; shift 2 ;;
+      --description) description="$2"; has_description=1; shift 2 ;;
+      *) echo "unknown arg: $1" >&2; exit 1 ;;
+    esac
+  done
+  local payload="{}"
+  [[ -n "$name" ]] && payload=$(echo "$payload" | jq --arg v "$name" '. + {name: $v}')
+  if [[ "$has_description" -eq 1 ]]; then
+    payload=$(echo "$payload" | jq --arg v "$description" '. + {description: $v}')
+  fi
+  api PUT "/projects/${project_id}" -d "$payload"
 }
 
 cmd_repos() {

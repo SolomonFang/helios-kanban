@@ -394,6 +394,11 @@
           "placeholder": "프로젝트 이름 입력",
           "helper": "이 프로젝트의 표시 이름입니다."
         },
+        "projectDescription": {
+          "label": "Project Description",
+          "placeholder": "What is this project for? When should agents create tasks here?",
+          "helper": "Shown to agents via MCP so they can pick the right project."
+        },
         "repoPath": {
           "label": "Git 저장소 경로",
           "placeholder": "/기존/저장소/경로",

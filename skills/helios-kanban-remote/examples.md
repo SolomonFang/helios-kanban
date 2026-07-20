@@ -10,6 +10,16 @@ export HELIOS_KANBAN_ITERATION="260717"
 HK="bash scripts/hk.sh"
 ```
 
+## Pick the right project
+
+```bash
+$HK projects
+# read description + repos, then:
+export HELIOS_KANBAN_PROJECT_ID="<chosen>"
+# or set description for agents:
+$HK projects update "$HELIOS_KANBAN_PROJECT_ID" --description "Kanban product — UI/API work only"
+```
+
 ## Full remote loop
 
 **User**: 260717 新建「修复登录」，基于 develop 跑起来
