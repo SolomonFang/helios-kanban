@@ -59,6 +59,7 @@ The Vibe Kanban MCP server provides the following tools for managing projects, t
 | Tool | Purpose | Required Parameters | Optional Parameters | Returns |
 |------|---------|-------------------|-------------------|---------|
 | `list_projects` | Fetch all projects | None | None | List of projects with metadata |
+| `create_project` | Create a new project | `name`<br/>`repositories` (array, may be empty) | `description` | Created project with metadata |
 | `list_repos` | List repositories in a project | `project_id` | None | List of repositories with IDs |
 
 ### Context
@@ -73,9 +74,12 @@ The Vibe Kanban MCP server provides the following tools for managing projects, t
 |------|---------|-------------------|-------------------|---------|
 | `list_tasks` | List tasks in a project | `project_id` | `status`<br/>`limit` | List of tasks with execution state |
 | `create_task` | Create a new task | `project_id`<br/>`title` | `description` | Created task ID and confirmation |
+| `create_task_and_start` | Create a task and immediately start a workspace session on it | `project_id`<br/>`title`<br/>`repos` | `description`<br/>`iteration`<br/>`executor`<br/>`variant` | Task ID and workspace ID |
 | `get_task` | Get task details | `task_id` | None | Full task information |
+| `get_task_status` | Aggregated task status: workspaces, latest execution, session IDs, pending approvals, PR status, diff stats | `task_id` | None | Task details with per-workspace status |
 | `update_task` | Update task details | `task_id` | `title`<br/>`description`<br/>`status` | Updated task information |
 | `delete_task` | Delete a task | `task_id` | None | Deletion confirmation |
+| `list_tags` | List all tags (reference as `@tag_name` in task descriptions) | None | None | List of tags with content |
 
 ### Repository Management
 
@@ -83,6 +87,7 @@ The Vibe Kanban MCP server provides the following tools for managing projects, t
 |------|---------|-------------------|-------------------|---------|
 | `list_repos` | List repositories in a project | `project_id` | None | List of repositories with IDs and names |
 | `get_repo` | Get repository details including scripts | `repo_id` | None | Repository info with setup, cleanup, and dev server scripts |
+| `list_branches` | List git branches (local and remote) of a repository | `repo_id` | None | Branch list with current/remote flags |
 | `update_setup_script` | Update a repository's setup script | `repo_id` | `script` | Update confirmation |
 | `update_cleanup_script` | Update a repository's cleanup script | `repo_id` | `script` | Update confirmation |
 | `update_dev_server_script` | Update a repository's dev server script | `repo_id` | `script` | Update confirmation |
@@ -92,6 +97,17 @@ The Vibe Kanban MCP server provides the following tools for managing projects, t
 | Tool | Purpose | Required Parameters | Optional Parameters | Returns |
 |------|---------|-------------------|-------------------|---------|
 | `start_workspace_session` | Start working on a task with a coding agent | `task_id`<br/>`executor`<br/>`repos` | `variant` | Task ID and workspace ID |
+| `follow_up_session` | Send a follow-up instruction to a session (starts a new execution in the same workspace) | `session_id`<br/>`prompt` | `executor`<br/>`variant` | New execution process info |
+| `queue_message` | Queue a message to be delivered when the session's current execution finishes | `session_id`<br/>`message` | `executor`<br/>`variant` | Queue confirmation |
+
+Use `get_task_status` to find a workspace's `latest_session_id` for `follow_up_session` / `queue_message`.
+
+### Approvals
+
+| Tool | Purpose | Required Parameters | Optional Parameters | Returns |
+|------|---------|-------------------|-------------------|---------|
+| `list_approvals` | List pending tool-approval requests from running agents | None | None | List of pending approvals |
+| `respond_to_approval` | Approve or deny a pending approval (`decision`: `approved` or `denied`) | `approval_id`<br/>`decision` | `reason` | Outcome of the response |
 
 The `repos` parameter is an array of objects with:
 - `repo_id`: The repository ID (UUID)

@@ -19,11 +19,15 @@ use rmcp::{
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json;
+use services::services::approvals::ApprovalInfo;
+use utils::approvals::{ApprovalOutcome, ApprovalResponse};
 use uuid::Uuid;
 
 use crate::routes::{
     containers::ContainerQuery,
-    task_attempts::{CreateTaskAttemptBody, WorkspaceRepoInput},
+    task_attempts::{
+        CreateTaskAttemptBody, WorkspaceRepoInput, workspace_summary::WorkspaceSummaryRequest,
+    },
 };
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -390,6 +394,241 @@ pub struct GetTaskResponse {
     pub task: TaskDetails,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct FollowUpSessionRequest {
+    #[schemars(
+        description = "The ID of the session to send the follow-up to. Use get_task_status to find a workspace's latest_session_id."
+    )]
+    pub session_id: Uuid,
+    #[schemars(description = "The follow-up instruction/prompt for the agent")]
+    pub prompt: String,
+    #[schemars(
+        description = "Optional coding agent executor ('CLAUDE_CODE', 'AMP', 'GEMINI', 'CODEX', 'OPENCODE', 'CURSOR_AGENT', 'QWEN_CODE', 'COPILOT', 'DROID', 'REASONIX', 'KIMI_CLI'). Omit to reuse the session's executor (falls back to Settings default)."
+    )]
+    pub executor: Option<String>,
+    #[schemars(description = "Optional executor variant, if needed")]
+    pub variant: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct FollowUpSessionResponse {
+    pub session_id: String,
+    pub execution_process_id: String,
+    pub status: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct QueueMessageRequest {
+    #[schemars(
+        description = "The ID of the session to queue the message for. Use get_task_status to find a workspace's latest_session_id."
+    )]
+    pub session_id: Uuid,
+    #[schemars(
+        description = "The message to deliver to the agent when its current execution finishes"
+    )]
+    pub message: String,
+    #[schemars(
+        description = "Optional coding agent executor. Omit to reuse the session's executor (falls back to Settings default)."
+    )]
+    pub executor: Option<String>,
+    #[schemars(description = "Optional executor variant, if needed")]
+    pub variant: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct QueueMessageResponse {
+    pub session_id: String,
+    pub queued: bool,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ApprovalSummary {
+    #[schemars(description = "The approval ID, to pass to respond_to_approval")]
+    pub approval_id: String,
+    #[schemars(description = "Name of the tool requesting approval")]
+    pub tool_name: String,
+    #[schemars(description = "The execution process waiting on this approval")]
+    pub execution_process_id: String,
+    #[schemars(
+        description = "True if this is a question from the agent (cannot be answered via respond_to_approval)"
+    )]
+    pub is_question: bool,
+    #[schemars(description = "When the approval was requested")]
+    pub created_at: String,
+    #[schemars(description = "When the approval request times out")]
+    pub timeout_at: String,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ListApprovalsResponse {
+    pub approvals: Vec<ApprovalSummary>,
+    pub count: usize,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RespondToApprovalRequest {
+    #[schemars(description = "The approval ID from list_approvals")]
+    pub approval_id: String,
+    #[schemars(description = "Decision: 'approved' or 'denied'")]
+    pub decision: String,
+    #[schemars(description = "Optional reason, used when denying")]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct RespondToApprovalResponse {
+    pub approval_id: String,
+    pub outcome: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CreateTaskAndStartRequest {
+    #[schemars(description = "The ID of the project to create the task in. This is required!")]
+    pub project_id: Uuid,
+    #[schemars(description = "The title of the task")]
+    pub title: String,
+    #[schemars(description = "Optional description of the task")]
+    pub description: Option<String>,
+    #[schemars(
+        description = "Optional iteration code to assign the task to (e.g. '260717'). Omit to leave unassigned."
+    )]
+    pub iteration: Option<String>,
+    #[schemars(
+        description = "Optional coding agent executor. Omit to use Settings default from /api/info → config.executor_profile."
+    )]
+    pub executor: Option<String>,
+    #[schemars(description = "Optional executor variant, if needed")]
+    pub variant: Option<String>,
+    #[schemars(
+        description = "Repositories to include. Pass at least one {repo_id}; base_branch is optional."
+    )]
+    pub repos: Vec<McpWorkspaceRepoInput>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct CreateTaskAndStartResponse {
+    pub task_id: String,
+    pub workspace_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetTaskStatusRequest {
+    #[schemars(description = "The ID of the task to get the status for")]
+    pub task_id: Uuid,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct TaskWorkspaceStatus {
+    #[schemars(description = "The unique identifier of the workspace")]
+    pub workspace_id: String,
+    #[schemars(description = "Optional display name of the workspace")]
+    pub name: Option<String>,
+    #[schemars(description = "The workspace branch")]
+    pub branch: String,
+    #[schemars(description = "Whether the workspace is archived")]
+    pub archived: bool,
+    #[schemars(description = "When the workspace was created")]
+    pub created_at: String,
+    #[schemars(
+        description = "Session ID of the latest execution process (use for follow_up_session / queue_message)"
+    )]
+    pub latest_session_id: Option<String>,
+    #[schemars(
+        description = "Status of the latest execution process: 'running', 'completed', 'failed', 'killed'"
+    )]
+    pub latest_process_status: Option<String>,
+    #[schemars(description = "When the latest execution process completed")]
+    pub latest_process_completed_at: Option<String>,
+    #[schemars(description = "Is a tool approval currently pending?")]
+    pub has_pending_approval: bool,
+    #[schemars(description = "Is a dev server currently running?")]
+    pub has_running_dev_server: bool,
+    #[schemars(description = "Does this workspace have unseen coding agent turns?")]
+    pub has_unseen_turns: bool,
+    #[schemars(description = "PR status for this workspace: 'open', 'merged', 'closed'")]
+    pub pr_status: Option<String>,
+    #[schemars(description = "Number of files with changes")]
+    pub files_changed: Option<usize>,
+    #[schemars(description = "Total lines added across all files")]
+    pub lines_added: Option<usize>,
+    #[schemars(description = "Total lines removed across all files")]
+    pub lines_removed: Option<usize>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct GetTaskStatusResponse {
+    pub task: TaskDetails,
+    pub workspaces: Vec<TaskWorkspaceStatus>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListBranchesRequest {
+    #[schemars(description = "The ID of the repository to list branches from")]
+    pub repo_id: Uuid,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct BranchSummary {
+    #[schemars(description = "The branch name")]
+    pub name: String,
+    #[schemars(description = "Whether this is the currently checked-out branch")]
+    pub is_current: bool,
+    #[schemars(description = "Whether this is a remote-tracking branch")]
+    pub is_remote: bool,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ListBranchesResponse {
+    pub repo_id: String,
+    pub branches: Vec<BranchSummary>,
+    pub count: usize,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct TagSummary {
+    #[schemars(description = "The unique identifier of the tag")]
+    pub id: String,
+    #[schemars(description = "The tag name, referenced as @tag_name in task descriptions")]
+    pub tag_name: String,
+    #[schemars(description = "The content the tag expands to")]
+    pub content: String,
+    #[schemars(description = "When the tag was last updated")]
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ListTagsResponse {
+    pub tags: Vec<TagSummary>,
+    pub count: usize,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CreateProjectRepoInput {
+    #[schemars(description = "Absolute path to the git repository on this machine")]
+    pub git_repo_path: String,
+    #[schemars(description = "Optional display name. Omit to use the repo folder name.")]
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CreateProjectRequest {
+    #[schemars(description = "The name of the project")]
+    pub name: String,
+    #[schemars(
+        description = "Optional description of what this project is for — helps agents decide where to create tasks"
+    )]
+    pub description: Option<String>,
+    #[schemars(
+        description = "Repositories to link to the project. May be empty; repos can be added later in the UI."
+    )]
+    pub repositories: Vec<CreateProjectRepoInput>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct CreateProjectResponse {
+    pub project: ProjectSummary,
+}
+
 #[derive(Debug, Clone)]
 pub struct TaskServer {
     client: reqwest::Client,
@@ -502,6 +741,82 @@ struct ApiResponseEnvelope<T> {
     success: bool,
     data: Option<T>,
     message: Option<String>,
+}
+
+/// Request body for POST /api/projects (db's CreateProject is Deserialize-only).
+#[derive(Debug, Serialize)]
+struct CreateProjectBody {
+    name: String,
+    description: Option<String>,
+    repositories: Vec<CreateProjectRepoBody>,
+}
+
+#[derive(Debug, Serialize)]
+struct CreateProjectRepoBody {
+    display_name: String,
+    git_repo_path: String,
+}
+
+/// Request body for POST /api/sessions/{id}/follow-up (the route's
+/// CreateFollowUpAttempt is Deserialize-only).
+#[derive(Debug, Serialize)]
+struct FollowUpBody {
+    prompt: String,
+    executor_profile_id: ExecutorProfileId,
+    retry_process_id: Option<Uuid>,
+    force_when_dirty: Option<bool>,
+    perform_git_reset: Option<bool>,
+}
+
+/// Request body for POST /api/sessions/{id}/queue (the route's
+/// QueueMessageRequest is Deserialize-only).
+#[derive(Debug, Serialize)]
+struct QueueMessageBody {
+    message: String,
+    executor_profile_id: ExecutorProfileId,
+}
+
+/// Minimal mirror of ExecutionProcess for follow-up responses.
+#[derive(Debug, Deserialize)]
+struct ExecutionProcessInfo {
+    id: Uuid,
+    session_id: Uuid,
+    status: String,
+}
+
+/// Minimal mirror of Session for best-effort executor lookup.
+#[derive(Debug, Deserialize)]
+struct SessionExecutorInfo {
+    executor: Option<String>,
+}
+
+/// Minimal mirror of GitBranch (Serialize-only in the git crate).
+#[derive(Debug, Deserialize)]
+struct BranchInfo {
+    name: String,
+    is_current: bool,
+    is_remote: bool,
+}
+
+/// Mirror of WorkspaceSummary (Serialize-only in routes).
+#[derive(Debug, Deserialize)]
+struct WorkspaceSummaryInfo {
+    workspace_id: Uuid,
+    latest_session_id: Option<Uuid>,
+    has_pending_approval: bool,
+    files_changed: Option<usize>,
+    lines_added: Option<usize>,
+    lines_removed: Option<usize>,
+    latest_process_completed_at: Option<String>,
+    latest_process_status: Option<String>,
+    has_running_dev_server: bool,
+    has_unseen_turns: bool,
+    pr_status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WorkspaceSummariesEnvelope {
+    summaries: Vec<WorkspaceSummaryInfo>,
 }
 
 impl TaskServer {
@@ -753,6 +1068,34 @@ Silent fallback to \"main\" was removed because repos without main leave workspa
         });
 
         result.into_owned()
+    }
+
+    /// Best-effort lookup of the executor a session has been running with.
+    async fn session_executor(&self, session_id: Uuid) -> Option<String> {
+        let url = self.url(&format!("/api/sessions/{session_id}"));
+        let info: SessionExecutorInfo = self.send_json(self.client.get(&url)).await.ok()?;
+        info.executor
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
+
+    /// Resolve the executor for session-bound calls (follow-up/queue):
+    /// explicit param > the session's current executor > Settings default.
+    async fn resolve_session_executor_profile(
+        &self,
+        session_id: Uuid,
+        executor: Option<String>,
+        variant: Option<String>,
+    ) -> Result<(BaseCodingAgent, Option<String>), CallToolResult> {
+        let executor = match executor
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+        {
+            Some(e) => Some(e),
+            None => self.session_executor(session_id).await,
+        };
+        self.resolve_default_executor_profile(executor, variant)
+            .await
     }
 }
 
@@ -1324,12 +1667,496 @@ impl TaskServer {
 
         TaskServer::success(&response)
     }
+
+    #[tool(
+        description = "Send a follow-up instruction to a task's agent session (starts a new execution in the same workspace). Use get_task_status to find a workspace's latest_session_id. Omit `executor` to reuse the session's executor."
+    )]
+    async fn follow_up_session(
+        &self,
+        Parameters(FollowUpSessionRequest {
+            session_id,
+            prompt,
+            executor,
+            variant,
+        }): Parameters<FollowUpSessionRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let (base_executor, variant) = match self
+            .resolve_session_executor_profile(session_id, executor, variant)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => return Ok(e),
+        };
+
+        let payload = FollowUpBody {
+            prompt,
+            executor_profile_id: ExecutorProfileId {
+                executor: base_executor,
+                variant,
+            },
+            retry_process_id: None,
+            force_when_dirty: None,
+            perform_git_reset: None,
+        };
+
+        let url = self.url(&format!("/api/sessions/{session_id}/follow-up"));
+        let process: ExecutionProcessInfo =
+            match self.send_json(self.client.post(&url).json(&payload)).await {
+                Ok(p) => p,
+                Err(e) => return Ok(e),
+            };
+
+        TaskServer::success(&FollowUpSessionResponse {
+            session_id: process.session_id.to_string(),
+            execution_process_id: process.id.to_string(),
+            status: process.status,
+        })
+    }
+
+    #[tool(
+        description = "Queue a message to be delivered to a session when its current execution finishes (one queued message per session; a new one replaces the old). Prefer this over follow_up_session when the agent is still running. Use get_task_status to find a workspace's latest_session_id."
+    )]
+    async fn queue_message(
+        &self,
+        Parameters(QueueMessageRequest {
+            session_id,
+            message,
+            executor,
+            variant,
+        }): Parameters<QueueMessageRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let (base_executor, variant) = match self
+            .resolve_session_executor_profile(session_id, executor, variant)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => return Ok(e),
+        };
+
+        let payload = QueueMessageBody {
+            message,
+            executor_profile_id: ExecutorProfileId {
+                executor: base_executor,
+                variant,
+            },
+        };
+
+        let url = self.url(&format!("/api/sessions/{session_id}/queue"));
+        let status: serde_json::Value =
+            match self.send_json(self.client.post(&url).json(&payload)).await {
+                Ok(s) => s,
+                Err(e) => return Ok(e),
+            };
+
+        let queued = status.get("status").and_then(|s| s.as_str()) == Some("queued");
+
+        TaskServer::success(&QueueMessageResponse {
+            session_id: session_id.to_string(),
+            queued,
+        })
+    }
+
+    #[tool(
+        description = "List pending tool-approval requests from running agents. Respond to one with respond_to_approval."
+    )]
+    async fn list_approvals(&self) -> Result<CallToolResult, ErrorData> {
+        let url = self.url("/api/approvals");
+        let approvals: Vec<ApprovalInfo> = match self.send_json(self.client.get(&url)).await {
+            Ok(a) => a,
+            Err(e) => return Ok(e),
+        };
+
+        let summaries: Vec<ApprovalSummary> = approvals
+            .into_iter()
+            .map(|a| ApprovalSummary {
+                approval_id: a.approval_id,
+                tool_name: a.tool_name,
+                execution_process_id: a.execution_process_id.to_string(),
+                is_question: a.is_question,
+                created_at: a.created_at.to_rfc3339(),
+                timeout_at: a.timeout_at.to_rfc3339(),
+            })
+            .collect();
+
+        TaskServer::success(&ListApprovalsResponse {
+            count: summaries.len(),
+            approvals: summaries,
+        })
+    }
+
+    #[tool(
+        description = "Approve or deny a pending tool-approval request. Get the `approval_id` from list_approvals. `decision` must be 'approved' or 'denied'."
+    )]
+    async fn respond_to_approval(
+        &self,
+        Parameters(RespondToApprovalRequest {
+            approval_id,
+            decision,
+            reason,
+        }): Parameters<RespondToApprovalRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let status = match decision.trim().to_ascii_lowercase().as_str() {
+            "approved" => ApprovalOutcome::Approved,
+            "denied" => ApprovalOutcome::Denied {
+                reason: reason
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty()),
+            },
+            _ => {
+                return Self::err(
+                    "Invalid decision. Valid values: 'approved', 'denied'".to_string(),
+                    Some(decision),
+                );
+            }
+        };
+
+        // The respond endpoint requires the execution_process_id; look it up
+        // from the pending approvals list so callers only need the approval_id.
+        let url = self.url("/api/approvals");
+        let approvals: Vec<ApprovalInfo> = match self.send_json(self.client.get(&url)).await {
+            Ok(a) => a,
+            Err(e) => return Ok(e),
+        };
+        let Some(approval) = approvals.into_iter().find(|a| a.approval_id == approval_id) else {
+            return Self::err(
+                format!(
+                    "Approval {approval_id} not found among pending approvals (already resolved or timed out?)."
+                ),
+                None::<String>,
+            );
+        };
+        if approval.is_question {
+            return Self::err(
+                "This request is a question from the agent, not an approve/deny decision; it cannot be answered with this tool."
+                    .to_string(),
+                None::<String>,
+            );
+        }
+
+        let payload = ApprovalResponse {
+            execution_process_id: approval.execution_process_id,
+            status,
+        };
+        let url = self.url(&format!("/api/approvals/{approval_id}/respond"));
+        let outcome: ApprovalOutcome =
+            match self.send_json(self.client.post(&url).json(&payload)).await {
+                Ok(o) => o,
+                Err(e) => return Ok(e),
+            };
+
+        let outcome_label = match &outcome {
+            ApprovalOutcome::Approved => "approved",
+            ApprovalOutcome::Denied { .. } => "denied",
+            ApprovalOutcome::Answered { .. } => "answered",
+            ApprovalOutcome::TimedOut => "timed_out",
+        };
+
+        TaskServer::success(&RespondToApprovalResponse {
+            approval_id,
+            outcome: outcome_label.to_string(),
+        })
+    }
+
+    #[tool(
+        description = "Create a new task in a project and immediately start a workspace session on it. Equivalent to create_task + start_workspace_session in one call."
+    )]
+    async fn create_task_and_start(
+        &self,
+        Parameters(CreateTaskAndStartRequest {
+            project_id,
+            title,
+            description,
+            iteration,
+            executor,
+            variant,
+            repos,
+        }): Parameters<CreateTaskAndStartRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if repos.is_empty() {
+            return Self::err(
+                "At least one repository must be specified.".to_string(),
+                None::<String>,
+            );
+        }
+
+        // 1. Create the task (same behavior as create_task)
+        let expanded_description = match description {
+            Some(desc) => Some(self.expand_tags(&desc).await),
+            None => None,
+        };
+        let iteration = iteration.and_then(|s| {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+
+        let mut create =
+            CreateTask::from_title_description(project_id, title, expanded_description);
+        create.iteration = iteration;
+
+        let url = self.url("/api/tasks");
+        let task: Task = match self.send_json(self.client.post(&url).json(&create)).await {
+            Ok(t) => t,
+            Err(e) => return Ok(e),
+        };
+
+        // 2. Start a workspace session on the new task (same behavior as start_workspace_session)
+        let (base_executor, variant) = match self
+            .resolve_default_executor_profile(executor, variant)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => return Ok(e),
+        };
+        let executor_profile_id = ExecutorProfileId {
+            executor: base_executor,
+            variant,
+        };
+
+        let mut workspace_repos: Vec<WorkspaceRepoInput> = Vec::with_capacity(repos.len());
+        for r in repos {
+            let target_branch = match self
+                .resolve_repo_target_branch(r.repo_id, r.base_branch)
+                .await
+            {
+                Ok(b) => b,
+                Err(e) => return Ok(e),
+            };
+            workspace_repos.push(WorkspaceRepoInput {
+                repo_id: r.repo_id,
+                target_branch,
+            });
+        }
+
+        let payload = CreateTaskAttemptBody {
+            task_id: task.id,
+            executor_profile_id,
+            repos: workspace_repos,
+        };
+        let url = self.url("/api/task-attempts");
+        let workspace: Workspace = match self.send_json(self.client.post(&url).json(&payload)).await
+        {
+            Ok(w) => w,
+            Err(_) => {
+                return Self::err(
+                    format!(
+                        "Task {} was created but starting the workspace session failed. Do NOT create the task again; call start_workspace_session with this task_id to see the underlying error.",
+                        task.id
+                    ),
+                    None::<String>,
+                );
+            }
+        };
+
+        TaskServer::success(&CreateTaskAndStartResponse {
+            task_id: task.id.to_string(),
+            workspace_id: workspace.id.to_string(),
+        })
+    }
+
+    #[tool(
+        description = "Get the aggregated status of a task: task details plus, for each of its workspaces, the latest execution status, session ID (for follow_up_session/queue_message), pending-approval flag, PR status, and diff stats (files changed, lines added/removed)."
+    )]
+    async fn get_task_status(
+        &self,
+        Parameters(GetTaskStatusRequest { task_id }): Parameters<GetTaskStatusRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let url = self.url(&format!("/api/tasks/{task_id}"));
+        let task: Task = match self.send_json(self.client.get(&url)).await {
+            Ok(t) => t,
+            Err(e) => return Ok(e),
+        };
+
+        let url = self.url(&format!("/api/task-attempts?task_id={task_id}"));
+        let mut workspaces: Vec<Workspace> = match self.send_json(self.client.get(&url)).await {
+            Ok(ws) => ws,
+            Err(e) => return Ok(e),
+        };
+        workspaces.sort_by_key(|w| w.created_at);
+
+        // Workspace summaries are only available per archived-flag, so fetch
+        // both variants and index by workspace_id.
+        let mut summaries: std::collections::HashMap<Uuid, WorkspaceSummaryInfo> =
+            std::collections::HashMap::new();
+        if !workspaces.is_empty() {
+            for archived in [false, true] {
+                if archived && !workspaces.iter().any(|w| w.archived) {
+                    continue;
+                }
+                let query = WorkspaceSummaryRequest { archived };
+                let url = self.url("/api/task-attempts/summary");
+                let envelope: WorkspaceSummariesEnvelope =
+                    match self.send_json(self.client.post(&url).json(&query)).await {
+                        Ok(e) => e,
+                        Err(e) => return Ok(e),
+                    };
+                for s in envelope.summaries {
+                    summaries.insert(s.workspace_id, s);
+                }
+            }
+        }
+
+        let statuses: Vec<TaskWorkspaceStatus> = workspaces
+            .into_iter()
+            .map(|ws| {
+                let s = summaries.get(&ws.id);
+                TaskWorkspaceStatus {
+                    workspace_id: ws.id.to_string(),
+                    name: ws.name,
+                    branch: ws.branch,
+                    archived: ws.archived,
+                    created_at: ws.created_at.to_rfc3339(),
+                    latest_session_id: s.and_then(|x| x.latest_session_id.map(|id| id.to_string())),
+                    latest_process_status: s.and_then(|x| x.latest_process_status.clone()),
+                    latest_process_completed_at: s
+                        .and_then(|x| x.latest_process_completed_at.clone()),
+                    has_pending_approval: s.is_some_and(|x| x.has_pending_approval),
+                    has_running_dev_server: s.is_some_and(|x| x.has_running_dev_server),
+                    has_unseen_turns: s.is_some_and(|x| x.has_unseen_turns),
+                    pr_status: s.and_then(|x| x.pr_status.clone()),
+                    files_changed: s.and_then(|x| x.files_changed),
+                    lines_added: s.and_then(|x| x.lines_added),
+                    lines_removed: s.and_then(|x| x.lines_removed),
+                }
+            })
+            .collect();
+
+        TaskServer::success(&GetTaskStatusResponse {
+            task: TaskDetails::from_task(task),
+            workspaces: statuses,
+        })
+    }
+
+    #[tool(
+        description = "List the git branches (local and remote) of a repository. Use it to pick a valid base_branch for start_workspace_session or create_task_and_start."
+    )]
+    async fn list_branches(
+        &self,
+        Parameters(ListBranchesRequest { repo_id }): Parameters<ListBranchesRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let url = self.url(&format!("/api/repos/{repo_id}/branches"));
+        let branches: Vec<BranchInfo> = match self.send_json(self.client.get(&url)).await {
+            Ok(b) => b,
+            Err(e) => return Ok(e),
+        };
+
+        let summaries: Vec<BranchSummary> = branches
+            .into_iter()
+            .map(|b| BranchSummary {
+                name: b.name,
+                is_current: b.is_current,
+                is_remote: b.is_remote,
+            })
+            .collect();
+
+        TaskServer::success(&ListBranchesResponse {
+            repo_id: repo_id.to_string(),
+            count: summaries.len(),
+            branches: summaries,
+        })
+    }
+
+    #[tool(
+        description = "List all tags. Reference a tag in a task description as @tag_name to expand its content into the description."
+    )]
+    async fn list_tags(&self) -> Result<CallToolResult, ErrorData> {
+        let url = self.url("/api/tags");
+        let tags: Vec<Tag> = match self.send_json(self.client.get(&url)).await {
+            Ok(t) => t,
+            Err(e) => return Ok(e),
+        };
+
+        let summaries: Vec<TagSummary> = tags
+            .into_iter()
+            .map(|t| TagSummary {
+                id: t.id.to_string(),
+                tag_name: t.tag_name,
+                content: t.content,
+                updated_at: t.updated_at.to_rfc3339(),
+            })
+            .collect();
+
+        TaskServer::success(&ListTagsResponse {
+            count: summaries.len(),
+            tags: summaries,
+        })
+    }
+
+    #[tool(
+        description = "Create a new project. Optionally link repositories by passing their absolute git_repo_path (repos can also be added later in the UI)."
+    )]
+    async fn create_project(
+        &self,
+        Parameters(CreateProjectRequest {
+            name,
+            description,
+            repositories,
+        }): Parameters<CreateProjectRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return Self::err(
+                "Project name must not be empty.".to_string(),
+                None::<String>,
+            );
+        }
+
+        let mut repos: Vec<CreateProjectRepoBody> = Vec::with_capacity(repositories.len());
+        for r in repositories {
+            let path = r.git_repo_path.trim().trim_end_matches('/').to_string();
+            if path.is_empty() {
+                return Self::err(
+                    "git_repo_path must not be empty.".to_string(),
+                    None::<String>,
+                );
+            }
+            let display_name = r
+                .display_name
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| {
+                    std::path::Path::new(&path)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| path.clone())
+                });
+            repos.push(CreateProjectRepoBody {
+                display_name,
+                git_repo_path: path,
+            });
+        }
+
+        let description = description
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let payload = CreateProjectBody {
+            name,
+            description,
+            repositories: repos,
+        };
+
+        let url = self.url("/api/projects");
+        let project: Project = match self.send_json(self.client.post(&url).json(&payload)).await {
+            Ok(p) => p,
+            Err(e) => return Ok(e),
+        };
+
+        let summary = match self.project_summary(project).await {
+            Ok(s) => s,
+            Err(e) => return Ok(e),
+        };
+
+        TaskServer::success(&CreateProjectResponse { project: summary })
+    }
 }
 
 #[tool_handler]
 impl ServerHandler for TaskServer {
     fn get_info(&self) -> ServerInfo {
-        let mut instruction = "A task and project management server. Always call `list_projects` first and read each project's `description` (and `repos`) to choose the correct `project_id` before creating tasks. TOOLS: 'list_projects', 'get_project', 'update_project', 'list_tasks', 'create_task', 'start_workspace_session', 'stop_workspace_session', 'get_task', 'update_task', 'cancel_task', 'delete_task', 'list_repos', 'get_repo', 'update_setup_script', 'update_cleanup_script', 'update_dev_server_script'. Omit executor on start_workspace_session to use Settings default; omit base_branch to use repo default_target_branch. Prefer cancel_task over delete_task.".to_string();
+        let mut instruction = "A task and project management server. Always call `list_projects` first and read each project's `description` (and `repos`) to choose the correct `project_id` before creating tasks. TOOLS: 'list_projects', 'get_project', 'create_project', 'update_project', 'list_tasks', 'create_task', 'create_task_and_start', 'get_task', 'get_task_status', 'update_task', 'cancel_task', 'delete_task', 'start_workspace_session', 'stop_workspace_session', 'follow_up_session', 'queue_message', 'list_approvals', 'respond_to_approval', 'list_repos', 'get_repo', 'list_branches', 'list_tags', 'update_setup_script', 'update_cleanup_script', 'update_dev_server_script'. Omit executor on start_workspace_session to use Settings default; omit base_branch to use repo default_target_branch. Prefer cancel_task over delete_task. Prefer create_task_and_start over separate create_task + start_workspace_session calls.".to_string();
         if self.context.is_some() {
             let context_instruction = "Use 'get_context' to fetch project/task/workspace metadata for the active Vibe Kanban workspace session when available.";
             instruction = format!("{} {}", context_instruction, instruction);
