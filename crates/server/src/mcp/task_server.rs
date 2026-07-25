@@ -324,7 +324,7 @@ pub struct McpWorkspaceRepoInput {
     #[schemars(description = "The repository ID")]
     pub repo_id: Uuid,
     #[schemars(
-        description = "Optional base/target branch. Omit to use the repo's default_target_branch (else 'main')."
+        description = "Optional base/target branch. Omit to use the repo's default_target_branch. If that is also unset, the call fails (no silent fallback to main)."
     )]
     pub base_branch: Option<String>,
 }
@@ -664,10 +664,23 @@ impl TaskServer {
         let repo: Repo = self
             .send_json(self.client.get(self.url(&format!("/api/repos/{repo_id}"))))
             .await?;
-        Ok(repo
+        if let Some(branch) = repo
             .default_target_branch
-            .filter(|s| !s.trim().is_empty())
-            .unwrap_or_else(|| "main".to_string()))
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+        {
+            return Ok(branch);
+        }
+
+        Err(Self::err(
+            format!(
+                "Repository {repo_id} has no default_target_branch. Pass repos[].base_branch explicitly \
+(e.g. \"hly-dev\"), or set the repo's default target branch in Helios Kanban. \
+Silent fallback to \"main\" was removed because repos without main leave workspaces stuck loading."
+            ),
+            None::<String>,
+        )
+        .unwrap())
     }
 
     async fn project_repo_names(&self, project_id: Uuid) -> Result<Vec<String>, CallToolResult> {
