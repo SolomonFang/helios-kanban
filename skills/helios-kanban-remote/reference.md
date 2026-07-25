@@ -17,6 +17,7 @@ Read `.data` on success; read `.message` on failure.
 | GET | `/health` | Liveness check |
 | GET | `/info` | Server/user config (includes default `executor_profile`) |
 | GET | `/projects` | List projects (`description`, repos via separate call) |
+| POST | `/projects` | Create project |
 | GET | `/projects/{project_id}` | Get project |
 | PUT | `/projects/{project_id}` | Update project (`name`, `description`) |
 | GET | `/projects/{project_id}/repositories` | List repos |
@@ -42,6 +43,25 @@ Read `.data` on success; read `.message` on failure.
 
 ```bash
 hk info | jq '.config.executor_profile'
+```
+
+## Create project
+
+```json
+POST /api/projects
+{
+  "name": "My project",
+  "description": "What this project is for",
+  "repositories": [
+    { "display_name": "my-repo", "git_repo_path": "/abs/path/on/server" }
+  ]
+}
+```
+
+`git_repo_path` is a path on the kanban **server** host, not the bot host. `repositories` may be empty.
+
+```bash
+hk projects create "My project" --repo-path /abs/path/on/server
 ```
 
 ## Project description (for agents)

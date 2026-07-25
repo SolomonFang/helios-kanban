@@ -508,7 +508,9 @@ pub struct CreateTaskAndStartRequest {
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct CreateTaskAndStartResponse {
     pub task_id: String,
-    pub workspace_id: String,
+    pub workspace_id: Option<String>,
+    #[schemars(description = "Whether the agent process actually started")]
+    pub started: bool,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -774,6 +776,15 @@ struct FollowUpBody {
 struct QueueMessageBody {
     message: String,
     executor_profile_id: ExecutorProfileId,
+}
+
+/// Request body for POST /api/tasks/create-and-start (the route's
+/// CreateAndStartTaskRequest is Deserialize-only).
+#[derive(Debug, Serialize)]
+struct CreateAndStartBody {
+    task: CreateTask,
+    executor_profile_id: ExecutorProfileId,
+    repos: Vec<WorkspaceRepoInput>,
 }
 
 /// Minimal mirror of ExecutionProcess for follow-up responses.
@@ -1858,7 +1869,7 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Create a new task in a project and immediately start a workspace session on it. Equivalent to create_task + start_workspace_session in one call."
+        description = "Create a new task in a project and immediately start a workspace session on it (single atomic API call). Equivalent to create_task + start_workspace_session in one call."
     )]
     async fn create_task_and_start(
         &self,
@@ -1879,7 +1890,7 @@ impl TaskServer {
             );
         }
 
-        // 1. Create the task (same behavior as create_task)
+        // Same input handling as create_task
         let expanded_description = match description {
             Some(desc) => Some(self.expand_tags(&desc).await),
             None => None,
@@ -1892,18 +1903,11 @@ impl TaskServer {
                 Some(trimmed.to_string())
             }
         });
-
         let mut create =
             CreateTask::from_title_description(project_id, title, expanded_description);
         create.iteration = iteration;
 
-        let url = self.url("/api/tasks");
-        let task: Task = match self.send_json(self.client.post(&url).json(&create)).await {
-            Ok(t) => t,
-            Err(e) => return Ok(e),
-        };
-
-        // 2. Start a workspace session on the new task (same behavior as start_workspace_session)
+        // Same executor/repo resolution as start_workspace_session
         let (base_executor, variant) = match self
             .resolve_default_executor_profile(executor, variant)
             .await
@@ -1931,29 +1935,41 @@ impl TaskServer {
             });
         }
 
-        let payload = CreateTaskAttemptBody {
-            task_id: task.id,
+        let payload = CreateAndStartBody {
+            task: create,
             executor_profile_id,
             repos: workspace_repos,
         };
-        let url = self.url("/api/task-attempts");
-        let workspace: Workspace = match self.send_json(self.client.post(&url).json(&payload)).await
+        let url = self.url("/api/tasks/create-and-start");
+        let result: TaskWithAttemptStatus = match self
+            .send_json(self.client.post(&url).json(&payload))
+            .await
         {
-            Ok(w) => w,
+            Ok(r) => r,
             Err(_) => {
                 return Self::err(
-                    format!(
-                        "Task {} was created but starting the workspace session failed. Do NOT create the task again; call start_workspace_session with this task_id to see the underlying error.",
-                        task.id
-                    ),
+                    "create-and-start failed. The task may still have been created server-side; check with list_tasks before retrying.".to_string(),
                     None::<String>,
                 );
             }
         };
 
+        // The endpoint returns the task, not the workspace; fetch the
+        // workspace separately so callers get its ID for stop/status calls.
+        let url = self.url(&format!("/api/task-attempts?task_id={}", result.id));
+        let workspaces: Vec<Workspace> = self
+            .send_json(self.client.get(&url))
+            .await
+            .unwrap_or_default();
+        let workspace_id = workspaces
+            .iter()
+            .max_by_key(|w| w.created_at)
+            .map(|w| w.id.to_string());
+
         TaskServer::success(&CreateTaskAndStartResponse {
-            task_id: task.id.to_string(),
-            workspace_id: workspace.id.to_string(),
+            task_id: result.id.to_string(),
+            workspace_id,
+            started: result.has_in_progress_attempt,
         })
     }
 

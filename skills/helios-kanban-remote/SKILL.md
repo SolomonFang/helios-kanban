@@ -31,6 +31,7 @@ Control a running [Helios Kanban](https://github.com/SolomonFang/vibe-kanban) in
 | User intent | Action |
 |-------------|--------|
 | "有哪些项目" | `hk projects`（看 `description` + `repos` 选项目） |
+| "创建项目" | `hk projects create "名称" --repo-path /server/abs/path` |
 | "默认 agent / 仓库" | `hk info`；`hk repos` |
 | "看看进行中的" | `hk tasks list --status inprogress` |
 | "找登录相关任务" | `hk tasks list --query 登录` |
@@ -147,7 +148,11 @@ Requires `curl` and `jq`. See `scripts/hk.sh --help`.
 https://github.com/SolomonFang/vibe-kanban/blob/hly-dev/skills/helios-kanban-remote/INSTALL.md
 ```
 
-## MCP alternative (same machine only)
+## MCP (same machine) vs this skill (remote)
+
+- **Same host as the kanban server** → prefer the MCP server. It covers the full orchestration surface: project/task CRUD, `create_project`, `create_task_and_start`, `start/stop_workspace_session`, `follow_up_session`, `queue_message`, `get_task_status`, `list_approvals` / `respond_to_approval`, `list_branches`, `list_tags`.
+- **Remote (phone bot, another host)** → use `hk.sh` over HTTP, as this skill documents.
+- New capabilities land in the MCP server first; `hk.sh` mirrors them for remote use. If the two drift, the REST API in [reference.md](reference.md) is the source of truth.
 
 ```json
 {
@@ -158,7 +163,7 @@ https://github.com/SolomonFang/vibe-kanban/blob/hly-dev/skills/helios-kanban-rem
 }
 ```
 
-Prefer MCP when co-located; use HTTP/`hk.sh` for remote phone control. MCP `start_workspace_session` may omit `executor` / `base_branch` (uses Settings + repo defaults). Also: `stop_workspace_session`, `cancel_task`.
+MCP `start_workspace_session` / `create_task_and_start` may omit `executor` / `base_branch` (uses Settings + repo defaults).
 
 ## More detail
 

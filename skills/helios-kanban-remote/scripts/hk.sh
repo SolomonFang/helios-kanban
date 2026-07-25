@@ -247,6 +247,7 @@ Commands:
   health
   info
   projects
+  projects create <name> [--description TEXT] [--repo-path PATH]...
   projects update <project_id> [--name TEXT] [--description TEXT]
   repos [project_id]
   branches <repo_id> [--query TEXT]
@@ -301,6 +302,11 @@ cmd_projects() {
     cmd_projects_update "$@"
     return
   fi
+  if [[ "${1:-}" == "create" ]]; then
+    shift
+    cmd_projects_create "$@"
+    return
+  fi
   local projects
   projects=$(api GET "/projects")
   # Enrich with repo names for agent routing
@@ -332,6 +338,40 @@ cmd_projects_update() {
     payload=$(echo "$payload" | jq --arg v "$description" '. + {description: $v}')
   fi
   api PUT "/projects/${project_id}" -d "$payload"
+}
+
+cmd_projects_create() {
+  require_jq
+  local name="${1:-}"
+  if [[ -z "$name" ]]; then
+    echo "error: project name required" >&2
+    exit 1
+  fi
+  shift
+  local description=""
+  local repo_paths=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --description | --desc) description="$2"; shift 2 ;;
+      --repo-path) repo_paths+=("$2"); shift 2 ;;
+      *) echo "unknown arg: $1" >&2; exit 1 ;;
+    esac
+  done
+  # git_repo_path is a path on the kanban SERVER host, not on this bot host
+  local repos_json="[]"
+  local path trimmed
+  for path in "${repo_paths[@]+"${repo_paths[@]}"}"; do
+    trimmed="${path%/}"
+    repos_json=$(echo "$repos_json" | jq \
+      --arg p "$trimmed" --arg d "$(basename "$trimmed")" \
+      '. + [{display_name: $d, git_repo_path: $p}]')
+  done
+  local payload
+  payload=$(jq -n \
+    --arg name "$name" --arg desc "$description" --argjson repos "$repos_json" \
+    '{name: $name, repositories: $repos}
+     + (if $desc == "" then {} else {description: $desc} end)')
+  api POST "/projects" -d "$payload"
 }
 
 cmd_repos() {
@@ -815,7 +855,7 @@ shift
 case "$command" in
   health) cmd_health ;;
   info) cmd_info ;;
-  projects) cmd_projects ;;
+  projects) cmd_projects "$@" ;;
   repos) cmd_repos "$@" ;;
   branches) cmd_branches "$@" ;;
   tasks)
