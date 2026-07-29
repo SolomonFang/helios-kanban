@@ -9,10 +9,7 @@ use std::{sync::Arc, time::Duration};
 use futures::StreamExt;
 use workspace_utils::msg_store::MsgStore;
 
-use super::{
-    NormalizedEntry, NormalizedEntryType,
-    plain_text_processor::PlainTextLogProcessor,
-};
+use super::{NormalizedEntry, NormalizedEntryType, plain_text_processor::PlainTextLogProcessor};
 use crate::logs::utils::EntryIndexProvider;
 
 pub fn normalize_stdout_logs(msg_store: Arc<MsgStore>, entry_index_provider: EntryIndexProvider) {

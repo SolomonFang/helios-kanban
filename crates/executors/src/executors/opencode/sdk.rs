@@ -281,8 +281,7 @@ pub(super) async fn maybe_send_commit_reminder(
         config.model_variant.clone(),
         config.agent.clone(),
     ));
-    let reminder_result =
-        run_request_with_control(reminder_fut, control_rx, cancel.clone()).await;
+    let reminder_result = run_request_with_control(reminder_fut, control_rx, cancel.clone()).await;
 
     if let Err(err) = reminder_result {
         // Log but don't fail the session on commit reminder errors.
@@ -1520,8 +1519,7 @@ async fn request_permission_approval(
     let approval_id = match approvals.create_tool_approval(tool_name).await {
         Ok(id) => id,
         Err(
-            ExecutorApprovalError::ServiceUnavailable
-            | ExecutorApprovalError::SessionNotRegistered,
+            ExecutorApprovalError::ServiceUnavailable | ExecutorApprovalError::SessionNotRegistered,
         ) => return Ok(ApprovalStatus::Approved),
         Err(err) => return Err(err),
     };

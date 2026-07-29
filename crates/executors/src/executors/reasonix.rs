@@ -20,8 +20,7 @@ use crate::{
     executors::{
         AppendPrompt, AvailabilityInfo, ExecutorError, SpawnedChild, StandardCodingAgentExecutor,
     },
-    logs::stdout_processor::normalize_stdout_logs,
-    logs::utils::EntryIndexProvider,
+    logs::{stdout_processor::normalize_stdout_logs, utils::EntryIndexProvider},
 };
 
 /// Session namespace used by the ACP harness to persist reasonix sessions.

@@ -50,8 +50,8 @@ use crate::{
     command::{CmdOverrides, CommandBuildError, CommandBuilder, CommandParts, apply_overrides},
     env::ExecutionEnv,
     executors::{
-        AppendPrompt, AvailabilityInfo, ExecutorError, ExecutorExitResult, SlashCommandDescription,
-        SpawnedChild, StandardCodingAgentExecutor, ChildHandle,
+        AppendPrompt, AvailabilityInfo, ChildHandle, ExecutorError, ExecutorExitResult,
+        SlashCommandDescription, SpawnedChild, StandardCodingAgentExecutor,
     },
     logs::utils::patch,
     stdout_dup::create_stdout_pipe_writer,

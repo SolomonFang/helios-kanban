@@ -1,8 +1,6 @@
-use std::{path::Path, sync::Arc};
+use std::{io, path::Path, sync::Arc};
 
 use async_trait::async_trait;
-use std::io;
-
 use command_group::AsyncGroupChild;
 use enum_dispatch::enum_dispatch;
 use futures::stream::BoxStream;
@@ -334,10 +332,9 @@ impl std::fmt::Debug for ChildHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ChildHandle::Group(child) => f.debug_tuple("Group").field(child).finish(),
-            ChildHandle::Pty { child, .. } => f
-                .debug_tuple("Pty")
-                .field(&child.process_id())
-                .finish(),
+            ChildHandle::Pty { child, .. } => {
+                f.debug_tuple("Pty").field(&child.process_id()).finish()
+            }
         }
     }
 }
@@ -346,10 +343,7 @@ fn pty_exit_to_std(es: portable_pty::ExitStatus) -> std::process::ExitStatus {
     #[cfg(unix)]
     {
         use std::os::unix::process::ExitStatusExt;
-        std::process::ExitStatus::from_raw(
-            es.exit_code()
-                as i32,
-        )
+        std::process::ExitStatus::from_raw(es.exit_code() as i32)
     }
     #[cfg(not(unix))]
     {
@@ -367,12 +361,8 @@ fn pty_exit_to_std(es: portable_pty::ExitStatus) -> std::process::ExitStatus {
 impl ChildHandle {
     pub fn try_wait(&mut self) -> io::Result<Option<std::process::ExitStatus>> {
         match self {
-            ChildHandle::Group(child) => child
-                .try_wait()
-                .map_err(|e| io::Error::other(e)),
-            ChildHandle::Pty { child, .. } => {
-                child.try_wait().map(|opt| opt.map(pty_exit_to_std))
-            }
+            ChildHandle::Group(child) => child.try_wait().map_err(|e| io::Error::other(e)),
+            ChildHandle::Pty { child, .. } => child.try_wait().map(|opt| opt.map(pty_exit_to_std)),
         }
     }
 
@@ -392,10 +382,7 @@ impl ChildHandle {
 
     pub async fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
         match self {
-            ChildHandle::Group(child) => child
-                .wait()
-                .await
-                .map_err(|e| io::Error::other(e)),
+            ChildHandle::Group(child) => child.wait().await.map_err(|e| io::Error::other(e)),
             ChildHandle::Pty { child, .. } => child.wait().map(pty_exit_to_std),
         }
     }

@@ -269,7 +269,10 @@ mod tests {
             cancel.cancel();
         }
         let calls = recording.calls.lock().unwrap().clone();
-        assert!(!calls.is_empty(), "no permission requests reached approvals");
+        assert!(
+            !calls.is_empty(),
+            "no permission requests reached approvals"
+        );
         eprintln!("[e2e] success, approval calls: {calls:?}");
     }
 
@@ -297,12 +300,19 @@ mod tests {
                 .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
         });
         let latest = entries.last()?;
-        let id = latest.file_name().to_string_lossy().trim_end_matches(".jsonl").to_string();
+        let id = latest
+            .file_name()
+            .to_string_lossy()
+            .trim_end_matches(".jsonl")
+            .to_string();
         Some((id, latest.path()))
     }
 
     fn agent_session_ids() -> std::collections::BTreeSet<String> {
-        let home = dirs::home_dir().unwrap().join(".kimi-code").join("sessions");
+        let home = dirs::home_dir()
+            .unwrap()
+            .join(".kimi-code")
+            .join("sessions");
         let mut ids = std::collections::BTreeSet::new();
         if let Ok(workspaces) = std::fs::read_dir(home) {
             for ws in workspaces.flatten() {
@@ -340,8 +350,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     #[ignore]
     async fn kimi_acp_follow_up_resumes_native_session() {
-        let workdir = std::env::var("KIMI_E2E_WORKDIR")
-            .unwrap_or_else(|_| "/tmp".to_string());
+        let workdir = std::env::var("KIMI_E2E_WORKDIR").unwrap_or_else(|_| "/tmp".to_string());
         let workdir = PathBuf::from(workdir);
         let env = ExecutionEnv::new(
             RepoContext::new(workdir.clone(), vec![".".to_string()]),
@@ -387,8 +396,9 @@ mod tests {
 
         // 1. The follow-up must NOT create a new agent-side session
         let agent_sessions_after = agent_session_ids();
-        let new_agent_sessions: Vec<_> =
-            agent_sessions_after.difference(&agent_sessions_before).collect();
+        let new_agent_sessions: Vec<_> = agent_sessions_after
+            .difference(&agent_sessions_before)
+            .collect();
         assert!(
             new_agent_sessions.is_empty(),
             "follow-up created new agent sessions instead of resuming: {new_agent_sessions:?}"

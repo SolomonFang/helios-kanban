@@ -312,9 +312,7 @@ impl AppServerClient {
             .as_ref()
             .ok_or(ExecutorApprovalError::ServiceUnavailable)?;
 
-        let approval_id = approval_service
-            .create_tool_approval(tool_name)
-            .await?;
+        let approval_id = approval_service.create_tool_approval(tool_name).await?;
         Ok(approval_service
             .wait_tool_approval(&approval_id, self.cancel.clone())
             .await?)

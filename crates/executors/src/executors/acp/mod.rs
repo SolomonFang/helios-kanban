@@ -10,7 +10,7 @@ pub use harness::AcpAgentHarness;
 pub use normalize_logs::*;
 use serde::{Deserialize, Serialize};
 pub use session::SessionManager;
-use workspace_utils::approvals::ApprovalStatus;
+use workspace_utils::approvals::{ApprovalStatus, QuestionStatus};
 
 /// Parsed event types for internal processing
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,6 +32,9 @@ pub enum AcpEvent {
         Option<PendingApprovalMeta>,
     ),
     ApprovalResponse(ApprovalResponse),
+    /// Resolution of an AskUserQuestion approval: carries the final question
+    /// status so the conversation entry can leave the pending state.
+    QuestionResponse(QuestionResponse),
     Error(String),
     Done(String),
     Other(agent_client_protocol::SessionNotification),
@@ -55,6 +58,14 @@ impl FromStr for AcpEvent {
 pub struct ApprovalResponse {
     pub tool_call_id: String,
     pub status: ApprovalStatus,
+}
+
+/// Final status of an AskUserQuestion bridge request, mirroring how
+/// [`ApprovalResponse`] resolves a tool approval.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuestionResponse {
+    pub tool_call_id: String,
+    pub status: QuestionStatus,
 }
 
 /// Approval metadata attached to a permission request event, allowing the log

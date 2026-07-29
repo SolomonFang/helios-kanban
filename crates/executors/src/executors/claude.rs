@@ -37,9 +37,8 @@ use crate::{
     command::{CmdOverrides, CommandBuildError, CommandBuilder, CommandParts, apply_overrides},
     env::ExecutionEnv,
     executors::{
-        AppendPrompt, AvailabilityInfo, ExecutorError, SpawnedChild, StandardCodingAgentExecutor,
-        ChildHandle,
-        codex::client::LogWriter, utils::reorder_slash_commands,
+        AppendPrompt, AvailabilityInfo, ChildHandle, ExecutorError, SpawnedChild,
+        StandardCodingAgentExecutor, codex::client::LogWriter, utils::reorder_slash_commands,
     },
     logs::{
         ActionType, AnsweredQuestion, AskUserQuestionItem, AskUserQuestionOption, FileChange,
@@ -1550,8 +1549,7 @@ impl ClaudeLogProcessor {
                 approval_id,
             } => {
                 let requested_at = chrono::Utc::now();
-                let timeout_at =
-                    requested_at + chrono::Duration::seconds(APPROVAL_TIMEOUT_SECONDS);
+                let timeout_at = requested_at + chrono::Duration::seconds(APPROVAL_TIMEOUT_SECONDS);
                 self.apply_tool_status_or_defer(
                     call_id,
                     ToolStatus::PendingApproval {

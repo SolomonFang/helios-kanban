@@ -16,8 +16,8 @@ use crate::{
     command::{CmdOverrides, CommandBuildError, CommandBuilder, apply_overrides},
     env::ExecutionEnv,
     executors::{
-        AppendPrompt, AvailabilityInfo, ExecutorError, ExecutorExitResult, SpawnedChild,
-        StandardCodingAgentExecutor, opencode::types::OpencodeExecutorEvent, ChildHandle,
+        AppendPrompt, AvailabilityInfo, ChildHandle, ExecutorError, ExecutorExitResult,
+        SpawnedChild, StandardCodingAgentExecutor, opencode::types::OpencodeExecutorEvent,
     },
     logs::utils::patch,
     stdout_dup::create_stdout_pipe_writer,

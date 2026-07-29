@@ -8,15 +8,19 @@ use agent_client_protocol::{self as acp, SessionNotification};
 use futures::StreamExt;
 use regex::Regex;
 use serde::Deserialize;
-use workspace_utils::{approvals::ApprovalStatus, msg_store::MsgStore};
+use workspace_utils::{
+    approvals::{ApprovalStatus, QuestionStatus},
+    msg_store::MsgStore,
+};
 
 pub use super::AcpAgentHarness;
 use super::AcpEvent;
 use crate::{
     approvals::ToolCallMetadata,
     logs::{
-        ActionType, FileChange, NormalizedEntry, NormalizedEntryError, NormalizedEntryType,
-        TodoItem, ToolResult, ToolResultValueType, ToolStatus as LogToolStatus,
+        ActionType, AnsweredQuestion, AskUserQuestionItem, AskUserQuestionOption, FileChange,
+        NormalizedEntry, NormalizedEntryError, NormalizedEntryType, TodoItem, ToolResult,
+        ToolResultValueType, ToolStatus as LogToolStatus,
         stderr_processor::normalize_stderr_logs,
         utils::{ConversationPatch, EntryIndexProvider},
     },
@@ -278,6 +282,42 @@ pub fn normalize_logs(msg_store: Arc<MsgStore>, worktree_path: &Path) {
                                 .push_patch(ConversationPatch::add_normalized_entry(idx, entry));
                         }
                     }
+                    AcpEvent::QuestionResponse(resp) => {
+                        tracing::trace!("Received question response: {:?}", resp);
+                        // Resolve the pending_approval marker to its final status
+                        if let Some(tool_data) = tool_states.get_mut(&resp.tool_call_id)
+                            && tool_data.status_override.is_some()
+                        {
+                            tool_data.status_override =
+                                Some(LogToolStatus::from_question_status(&resp.status));
+                            let entry = build_tool_entry(tool_data);
+                            msg_store
+                                .push_patch(ConversationPatch::replace(tool_data.index, entry));
+                        }
+                        if let QuestionStatus::Answered { answers } = &resp.status {
+                            let idx = entry_index.next();
+                            let entry = NormalizedEntry {
+                                timestamp: None,
+                                entry_type: NormalizedEntryType::UserAnsweredQuestions {
+                                    answers: answers
+                                        .iter()
+                                        .map(|qa| AnsweredQuestion {
+                                            question: qa.question.clone(),
+                                            answer: qa.answer.clone(),
+                                        })
+                                        .collect(),
+                                },
+                                content: format!(
+                                    "Answered {} question{}",
+                                    answers.len(),
+                                    if answers.len() != 1 { "s" } else { "" }
+                                ),
+                                metadata: None,
+                            };
+                            msg_store
+                                .push_patch(ConversationPatch::add_normalized_entry(idx, entry));
+                        }
+                    }
                     AcpEvent::User(_) | AcpEvent::Other(_) => (),
                 }
             }
@@ -330,6 +370,13 @@ pub fn normalize_logs(msg_store: Arc<MsgStore>, worktree_path: &Path) {
         }
 
         fn map_to_action_type(tc: &PartialToolCallData) -> ActionType {
+            // Kimi bridges AskUserQuestion through ACP: surface the questions
+            // so the UI can render the interactive question banner.
+            if tc.title == ASK_USER_QUESTION_TITLE
+                && let Some(questions) = parse_ask_user_questions(tc.raw_input.as_ref())
+            {
+                return ActionType::AskUserQuestion { questions };
+            }
             match tc.kind {
                 agent_client_protocol::ToolKind::Read => {
                     // Special-case: read_many_files style titles parsed via helper
@@ -558,6 +605,9 @@ pub fn normalize_logs(msg_store: Arc<MsgStore>, worktree_path: &Path) {
         }
 
         fn get_tool_content(tc: &PartialToolCallData) -> String {
+            if tc.title == ASK_USER_QUESTION_TITLE {
+                return "Ask user question".to_string();
+            }
             match tc.kind {
                 agent_client_protocol::ToolKind::Execute => {
                     AcpEventParser::parse_execute_command(tc)
@@ -704,6 +754,62 @@ impl Default for PartialToolCallData {
 }
 
 struct AcpEventParser;
+
+/// Tool call title the kimi ACP adapter uses for the AskUserQuestion bridge.
+const ASK_USER_QUESTION_TITLE: &str = "AskUserQuestion";
+
+/// Raw `raw_input` shape of an AskUserQuestion tool call.
+#[derive(Debug, Clone, Deserialize)]
+struct AskUserQuestionArgs {
+    questions: Vec<AskUserQuestionArgItem>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AskUserQuestionArgItem {
+    question: String,
+    #[serde(default)]
+    header: String,
+    #[serde(default)]
+    options: Vec<AskUserQuestionArgOption>,
+    #[serde(rename = "multiSelect", default)]
+    multi_select: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct AskUserQuestionArgOption {
+    label: String,
+    #[serde(default)]
+    description: String,
+}
+
+/// Extract the questions from an AskUserQuestion tool call's raw input.
+/// Returns `None` when the input is missing or carries no questions.
+fn parse_ask_user_questions(
+    raw_input: Option<&serde_json::Value>,
+) -> Option<Vec<AskUserQuestionItem>> {
+    let args: AskUserQuestionArgs = serde_json::from_value(raw_input?.clone()).ok()?;
+    if args.questions.is_empty() {
+        return None;
+    }
+    Some(
+        args.questions
+            .into_iter()
+            .map(|q| AskUserQuestionItem {
+                question: q.question,
+                header: q.header,
+                options: q
+                    .options
+                    .into_iter()
+                    .map(|o| AskUserQuestionOption {
+                        label: o.label,
+                        description: o.description,
+                    })
+                    .collect(),
+                multi_select: q.multi_select,
+            })
+            .collect(),
+    )
+}
 
 impl AcpEventParser {
     /// Parse a line that may contain an ACP event
@@ -873,6 +979,72 @@ mod tests {
         assert!(
             denied_pos.is_some_and(|d| Some(d) > pending_pos),
             "expected a denied status patch after the pending one: {patches:?}"
+        );
+    }
+
+    const QUESTION_TOOL_CALL_LINE: &str = "{\"ToolCall\":{\"toolCallId\":\"0:ask_1\",\"title\":\"AskUserQuestion\",\"status\":\"in_progress\",\"content\":[],\"rawInput\":{\"questions\":[{\"question\":\"按哪个方案修改 release.yml?\",\"header\":\"下载源\",\"options\":[{\"label\":\"方案 A: 复用 R2\",\"description\":\"改动最小\"},{\"label\":\"方案 B: 自建服务器\",\"description\":\"速度最好\"}],\"multiSelect\":false}]}}}\n";
+    const QUESTION_PERMISSION_LINE: &str = "{\"RequestPermission\":[{\"sessionId\":\"s1\",\"toolCall\":{\"toolCallId\":\"0:ask_1\",\"title\":\"AskUserQuestion\",\"status\":\"in_progress\",\"content\":[]},\"options\":[{\"optionId\":\"q0_opt_0\",\"name\":\"方案 A: 复用 R2\",\"kind\":\"allow_once\"},{\"optionId\":\"q0_opt_1\",\"name\":\"方案 B: 自建服务器\",\"kind\":\"allow_once\"},{\"optionId\":\"q0_skip\",\"name\":\"Skip\",\"kind\":\"reject_once\"}]},{\"approval_id\":\"ap-q1\",\"requested_at\":\"2026-07-18T01:00:00Z\",\"timeout_at\":\"2026-07-18T11:00:00Z\"}]}\n";
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn question_tool_call_maps_to_ask_user_question_action() {
+        let msg_store = Arc::new(MsgStore::new());
+        normalize_logs(msg_store.clone(), Path::new("/tmp"));
+
+        msg_store.push_stdout(QUESTION_TOOL_CALL_LINE.to_string());
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let patches = patch_payloads(&msg_store);
+        assert!(
+            patches
+                .iter()
+                .any(|p| p.contains("\"action\":\"ask_user_question\"")
+                    && p.contains("按哪个方案修改 release.yml?")
+                    && p.contains("方案 A: 复用 R2")),
+            "expected an ask_user_question entry carrying the questions, got: {patches:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn question_response_resolves_pending_status_and_records_answers() {
+        let msg_store = Arc::new(MsgStore::new());
+        normalize_logs(msg_store.clone(), Path::new("/tmp"));
+
+        msg_store.push_stdout(QUESTION_TOOL_CALL_LINE.to_string());
+        msg_store.push_stdout(QUESTION_PERMISSION_LINE.to_string());
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let patches = patch_payloads(&msg_store);
+        assert!(
+            patches
+                .iter()
+                .any(|p| p.contains("\"action\":\"ask_user_question\"")
+                    && p.contains("\"status\":\"pending_approval\"")
+                    && p.contains("ap-q1")),
+            "expected a pending_approval ask_user_question entry, got: {patches:?}"
+        );
+
+        msg_store.push_stdout(
+            "{\"QuestionResponse\":{\"tool_call_id\":\"0:ask_1\",\"status\":{\"status\":\"answered\",\"answers\":[{\"question\":\"按哪个方案修改 release.yml?\",\"answer\":[\"方案 A: 复用 R2\"]}]}}}\n"
+                .to_string(),
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let patches = patch_payloads(&msg_store);
+        let pending_pos = patches
+            .iter()
+            .position(|p| p.contains("\"status\":\"pending_approval\""));
+        let success_pos = patches
+            .iter()
+            .rposition(|p| p.contains("\"status\":\"success\""));
+        assert!(
+            success_pos.is_some_and(|s| Some(s) > pending_pos),
+            "expected a success status patch after the pending one: {patches:?}"
+        );
+        assert!(
+            patches
+                .iter()
+                .any(|p| p.contains("user_answered_questions") && p.contains("方案 A: 复用 R2")),
+            "expected a user_answered_questions entry with the answer, got: {patches:?}"
         );
     }
 }
