@@ -231,6 +231,7 @@ export function CreateChatBoxContainer({
           title,
           description,
           status: null,
+          priority: null,
           parent_workspace_id: null,
           image_ids: getImageIds(),
           iteration: null,

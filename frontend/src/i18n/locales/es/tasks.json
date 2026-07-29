@@ -570,6 +570,13 @@
       "done": "Completado",
       "cancelled": "Cancelado"
     },
+    "priorityLabel": "Prioridad",
+    "priorityOptions": {
+      "urgent": "Urgente",
+      "high": "Alta",
+      "medium": "Media",
+      "low": "Baja"
+    },
     "iterationLabel": "Iteración",
     "noIteration": "Sin iteración",
     "startLabel": "Iniciar",

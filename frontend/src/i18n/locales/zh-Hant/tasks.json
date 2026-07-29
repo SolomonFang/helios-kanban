@@ -570,6 +570,13 @@
       "done": "完成",
       "cancelled": "已取消"
     },
+    "priorityLabel": "優先級",
+    "priorityOptions": {
+      "urgent": "緊急",
+      "high": "高",
+      "medium": "中",
+      "low": "低"
+    },
     "iterationLabel": "迭代",
     "noIteration": "無迭代",
     "startLabel": "開始",

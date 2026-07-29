@@ -686,6 +686,7 @@ export function ProjectTasks() {
           title: task.title,
           description: task.description,
           status: newStatus,
+          priority: task.priority,
           parent_workspace_id: task.parent_workspace_id,
           image_ids: null,
           iteration: task.iteration,

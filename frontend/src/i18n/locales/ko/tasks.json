@@ -570,6 +570,13 @@
       "done": "완료",
       "cancelled": "취소됨"
     },
+    "priorityLabel": "우선순위",
+    "priorityOptions": {
+      "urgent": "긴급",
+      "high": "높음",
+      "medium": "중간",
+      "low": "낮음"
+    },
     "iterationLabel": "이터레이션",
     "noIteration": "이터레이션 없음",
     "startLabel": "시작",
