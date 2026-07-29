@@ -48,15 +48,17 @@ export type UpdateTag = { tag_name: string | null, content: string | null, };
 
 export type TaskStatus = "todo" | "inprogress" | "inreview" | "done" | "cancelled";
 
-export type Task = { id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, iteration: string | null, created_at: string, updated_at: string, };
+export type TaskPriority = "urgent" | "high" | "medium" | "low";
 
-export type TaskWithAttemptStatus = { has_in_progress_attempt: boolean, last_attempt_failed: boolean, executor: string, id: string, project_id: string, title: string, description: string | null, status: TaskStatus, parent_workspace_id: string | null, iteration: string | null, created_at: string, updated_at: string, };
+export type Task = { id: string, project_id: string, title: string, description: string | null, status: TaskStatus, priority: TaskPriority, parent_workspace_id: string | null, iteration: string | null, created_at: string, updated_at: string, };
+
+export type TaskWithAttemptStatus = { has_in_progress_attempt: boolean, last_attempt_failed: boolean, executor: string, id: string, project_id: string, title: string, description: string | null, status: TaskStatus, priority: TaskPriority, parent_workspace_id: string | null, iteration: string | null, created_at: string, updated_at: string, };
 
 export type TaskRelationships = { parent_task: Task | null, current_workspace: Workspace, children: Array<Task>, };
 
-export type CreateTask = { project_id: string, title: string, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, image_ids: Array<string> | null, iteration: string | null, };
+export type CreateTask = { project_id: string, title: string, description: string | null, status: TaskStatus | null, priority: TaskPriority | null, parent_workspace_id: string | null, image_ids: Array<string> | null, iteration: string | null, };
 
-export type UpdateTask = { title: string | null, description: string | null, status: TaskStatus | null, parent_workspace_id: string | null, image_ids: Array<string> | null, iteration: string | null, };
+export type UpdateTask = { title: string | null, description: string | null, status: TaskStatus | null, priority: TaskPriority | null, parent_workspace_id: string | null, image_ids: Array<string> | null, iteration: string | null, };
 
 export type DraftFollowUpData = { message: string, executor_profile_id: ExecutorProfileId, };
 

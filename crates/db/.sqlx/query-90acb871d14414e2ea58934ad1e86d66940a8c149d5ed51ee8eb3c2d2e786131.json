@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", parent_workspace_id as \"parent_workspace_id: Uuid\", iteration, created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks\n               WHERE rowid = $1",
+  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", priority as \"priority!: TaskPriority\", parent_workspace_id as \"parent_workspace_id: Uuid\", iteration, created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks\n               ORDER BY created_at ASC",
   "describe": {
     "columns": [
       {
@@ -29,28 +29,33 @@
         "type_info": "Text"
       },
       {
-        "name": "parent_workspace_id: Uuid",
+        "name": "priority!: TaskPriority",
         "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "parent_workspace_id: Uuid",
+        "ordinal": 6,
         "type_info": "Blob"
       },
       {
         "name": "iteration",
-        "ordinal": 6,
-        "type_info": "Text"
-      },
-      {
-        "name": "created_at!: DateTime<Utc>",
         "ordinal": 7,
         "type_info": "Text"
       },
       {
-        "name": "updated_at!: DateTime<Utc>",
+        "name": "created_at!: DateTime<Utc>",
         "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 9,
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 0
     },
     "nullable": [
       true,
@@ -58,11 +63,12 @@
       false,
       true,
       false,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "a2399ca33c788c0221996d2173e31c8377cf49b6ef75a4c9c2ec8dae3509c228"
+  "hash": "90acb871d14414e2ea58934ad1e86d66940a8c149d5ed51ee8eb3c2d2e786131"
 }

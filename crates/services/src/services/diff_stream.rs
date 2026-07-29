@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     io,
     path::{Path, PathBuf},
     sync::{
@@ -11,7 +11,10 @@ use std::{
 
 use db::{
     DBService,
-    models::{workspace::Workspace, workspace_repo::WorkspaceRepo},
+    models::{
+        execution_process_repo_state::ExecutionProcessRepoState, merge::Merge, repo::Repo,
+        workspace::Workspace, workspace_repo::WorkspaceRepo,
+    },
 };
 use executors::logs::utils::{ConversationPatch, patch::escape_json_pointer_segment};
 use futures::StreamExt;
@@ -39,60 +42,152 @@ pub struct DiffStats {
     pub lines_removed: usize,
 }
 
+/// Resolve the base commit for diffing a live (unmerged) repo.
+/// Returns the commit plus whether it is pinned. Repos without worktrees are
+/// pinned to the earliest recorded `before_head_commit`, because their branch
+/// is the target branch itself and `merge_base` against its live HEAD
+/// becomes meaningless once the branch advances.
+pub async fn resolve_base_commit(
+    pool: &SqlitePool,
+    git: &GitService,
+    workspace: &Workspace,
+    repo: &Repo,
+    target_branch: &str,
+) -> Option<(Commit, bool)> {
+    if !repo.use_worktree
+        && let Ok(Some(sha)) =
+            ExecutionProcessRepoState::find_earliest_before_head_commit(
+                pool,
+                workspace.id,
+                repo.id,
+            )
+            .await
+        && let Ok(oid) = git2::Oid::from_str(&sha)
+    {
+        return Some((Commit::new(oid), true));
+    }
+
+    let git = git.clone();
+    let repo_path = repo.path.clone();
+    let branch = workspace.branch.clone();
+    let target = target_branch.to_string();
+    tokio::task::spawn_blocking(move || git.get_base_commit(&repo_path, &branch, &target))
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .map(|commit| (commit, false))
+}
+
+/// Latest merge commit per repo for a workspace, keyed by repo id.
+/// `Merge::find_by_workspace_id` returns rows newest-first, so the first
+/// commit seen per repo wins.
+pub async fn merge_commits_by_repo(
+    pool: &SqlitePool,
+    workspace: &Workspace,
+) -> Result<HashMap<Uuid, String>, sqlx::Error> {
+    let merges = Merge::find_by_workspace_id(pool, workspace.id).await?;
+    let mut by_repo = HashMap::new();
+    for merge in merges {
+        if let Some(commit) = merge.merge_commit() {
+            by_repo.entry(merge.repo_id()).or_insert(commit);
+        }
+    }
+    Ok(by_repo)
+}
+
 /// Computes diff stats for a workspace by comparing against target branches.
 pub async fn compute_diff_stats(
     pool: &SqlitePool,
     git: &GitService,
     workspace: &Workspace,
 ) -> Option<DiffStats> {
-    let container_ref = workspace.container_ref.as_ref()?;
-
     let workspace_repos =
         WorkspaceRepo::find_repos_with_target_branch_for_workspace(pool, workspace.id)
             .await
             .ok()?;
 
+    let merge_commits = merge_commits_by_repo(pool, workspace).await.ok()?;
+
+    // Without a container ref we can only report stats for merged repos.
+    if workspace.container_ref.is_none() && merge_commits.is_empty() {
+        return None;
+    }
+
     let mut stats = DiffStats::default();
 
     for repo_with_branch in workspace_repos {
-        let worktree_path = PathBuf::from(container_ref).join(&repo_with_branch.repo.name);
-        let repo_path = repo_with_branch.repo.path.clone();
+        let repo = repo_with_branch.repo;
 
-        let base_commit_result = tokio::task::spawn_blocking({
-            let git = git.clone();
-            let repo_path = repo_path.clone();
-            let workspace_branch = workspace.branch.clone();
-            let target_branch = repo_with_branch.target_branch.clone();
-            move || git.get_base_commit(&repo_path, &workspace_branch, &target_branch)
-        })
-        .await;
-
-        let base_commit = match base_commit_result {
-            Ok(Ok(commit)) => commit,
-            _ => continue,
+        // Merged repos: diff the merge commit against its parent. Works even
+        // after the worktree has been cleaned up or the branch deleted.
+        let merged_diffs = match merge_commits.get(&repo.id) {
+            Some(merge_commit) => {
+                let git = git.clone();
+                let repo_path = repo.path.clone();
+                let commit_sha = merge_commit.clone();
+                tokio::task::spawn_blocking(move || {
+                    git.get_diffs(
+                        DiffTarget::Commit {
+                            repo_path: &repo_path,
+                            commit_sha: &commit_sha,
+                        },
+                        None,
+                    )
+                })
+                .await
+                .ok()
+                .and_then(Result::ok)
+            }
+            None => None,
         };
 
-        let diffs_result = tokio::task::spawn_blocking({
-            let git = git.clone();
-            let worktree = worktree_path.clone();
-            move || {
-                git.get_diffs(
-                    DiffTarget::Worktree {
-                        worktree_path: &worktree,
-                        base_commit: &base_commit,
-                    },
-                    None,
-                )
-            }
-        })
-        .await;
+        let diffs = match merged_diffs {
+            Some(diffs) => diffs,
+            None => {
+                let Some(container_ref) = workspace.container_ref.as_ref() else {
+                    continue;
+                };
+                let worktree_path = if repo.use_worktree {
+                    PathBuf::from(container_ref).join(&repo.name)
+                } else {
+                    repo.path.clone()
+                };
 
-        if let Ok(Ok(diffs)) = diffs_result {
-            for diff in diffs {
-                stats.files_changed += 1;
-                stats.lines_added += diff.additions.unwrap_or(0);
-                stats.lines_removed += diff.deletions.unwrap_or(0);
+                let Some((base_commit, _pinned)) = resolve_base_commit(
+                    pool,
+                    git,
+                    workspace,
+                    &repo,
+                    &repo_with_branch.target_branch,
+                )
+                .await
+                else {
+                    continue;
+                };
+
+                let git = git.clone();
+                let worktree = worktree_path.clone();
+                match tokio::task::spawn_blocking(move || {
+                    git.get_diffs(
+                        DiffTarget::Worktree {
+                            worktree_path: &worktree,
+                            base_commit: &base_commit,
+                        },
+                        None,
+                    )
+                })
+                .await
+                {
+                    Ok(Ok(diffs)) => diffs,
+                    _ => continue,
+                }
             }
+        };
+
+        for diff in diffs {
+            stats.files_changed += 1;
+            stats.lines_added += diff.additions.unwrap_or(0);
+            stats.lines_removed += diff.deletions.unwrap_or(0);
         }
     }
 
@@ -170,6 +265,9 @@ pub struct DiffStreamArgs {
     pub branch: String,
     pub target_branch: String,
     pub base_commit: Commit,
+    /// When true, `base_commit` is pinned (e.g. to a recorded
+    /// `before_head_commit`) and must not be recomputed from live refs.
+    pub pin_base_commit: bool,
     pub stats_only: bool,
     pub path_prefix: Option<String>,
 }
@@ -206,6 +304,32 @@ pub async fn create(args: DiffStreamArgs) -> Result<DiffStreamHandle, DiffStream
         ReceiverStream::new(rx).boxed(),
         Some(watcher_task),
     ))
+}
+
+/// Create a static diff stream from a precomputed set of diffs (e.g. the diff
+/// of a merge commit for an already-merged workspace). Sends all diffs
+/// followed by `Ready`, then stays open without any filesystem watchers.
+pub fn create_static(
+    diffs: Vec<Diff>,
+    repo_id: Uuid,
+    path_prefix: Option<String>,
+) -> DiffStreamHandle {
+    let (tx, rx) = mpsc::channel::<Result<LogMsg, io::Error>>(DIFF_STREAM_CHANNEL_CAPACITY);
+
+    let task = tokio::spawn(async move {
+        for diff in diffs {
+            let (_raw_path, msg) = decorate_diff(diff, path_prefix.as_deref(), repo_id);
+            if tx.send(Ok(msg)).await.is_err() {
+                return;
+            }
+        }
+        let _ = tx.send(Ok(LogMsg::Ready)).await;
+        // Keep the stream open so the websocket doesn't close, which would
+        // trigger reconnect loops; these diffs never change.
+        std::future::pending::<()>().await;
+    });
+
+    DiffStreamHandle::new(ReceiverStream::new(rx).boxed(), Some(task))
 }
 
 impl DiffStreamManager {
@@ -326,31 +450,22 @@ impl DiffStreamManager {
     }
 
     async fn send_diffs(&self, diffs: Vec<Diff>) -> Result<(), DiffStreamError> {
-        for mut diff in diffs {
-            let raw_path = GitService::diff_path(&diff);
+        for diff in diffs {
+            let content_omitted = diff.content_omitted;
+            let (raw_path, msg) =
+                decorate_diff(diff, self.args.path_prefix.as_deref(), self.args.repo_id);
 
             {
                 let mut guard = self.known_paths.write().unwrap();
                 guard.insert(raw_path.clone());
             }
 
-            if !diff.content_omitted {
+            if !content_omitted {
                 let mut guard = self.full_sent.write().unwrap();
                 guard.insert(raw_path.clone());
             }
 
-            let prefixed_entry = prefix_path(raw_path, self.args.path_prefix.as_deref());
-            if let Some(old) = diff.old_path {
-                diff.old_path = Some(prefix_path(old, self.args.path_prefix.as_deref()));
-            }
-            if let Some(new) = diff.new_path {
-                diff.new_path = Some(prefix_path(new, self.args.path_prefix.as_deref()));
-            }
-            diff.repo_id = Some(self.args.repo_id);
-
-            let patch =
-                ConversationPatch::add_diff(escape_json_pointer_segment(&prefixed_entry), diff);
-            if self.tx.send(Ok(LogMsg::JsonPatch(patch))).await.is_err() {
+            if self.tx.send(Ok(msg)).await.is_err() {
                 return Ok(());
             }
         }
@@ -440,6 +555,10 @@ impl DiffStreamManager {
     }
 
     async fn recompute_base_commit(&self, target_branch: &str) -> Option<Commit> {
+        if self.args.pin_base_commit {
+            return None;
+        }
+
         let git = self.args.git_service.clone();
         let repo_path = self.args.repo_path.clone();
         let branch = self.args.branch.clone();
@@ -457,6 +576,24 @@ fn prefix_path(path: String, prefix: Option<&str>) -> String {
         Some(p) => format!("{p}/{path}"),
         None => path,
     }
+}
+
+/// Apply path prefixing and repo id to a diff, returning its raw
+/// (unprefixed) path and the corresponding `add_diff` patch message.
+fn decorate_diff(mut diff: Diff, path_prefix: Option<&str>, repo_id: Uuid) -> (String, LogMsg) {
+    let raw_path = GitService::diff_path(&diff);
+
+    let prefixed_entry = prefix_path(raw_path.clone(), path_prefix);
+    if let Some(old) = diff.old_path {
+        diff.old_path = Some(prefix_path(old, path_prefix));
+    }
+    if let Some(new) = diff.new_path {
+        diff.new_path = Some(prefix_path(new, path_prefix));
+    }
+    diff.repo_id = Some(repo_id);
+
+    let patch = ConversationPatch::add_diff(escape_json_pointer_segment(&prefixed_entry), diff);
+    (raw_path, LogMsg::JsonPatch(patch))
 }
 
 pub fn apply_stream_omit_policy(diff: &mut Diff, sent_bytes: &Arc<AtomicUsize>, stats_only: bool) {

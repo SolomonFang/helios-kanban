@@ -2,7 +2,10 @@ use std::{
     collections::HashMap,
     io,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::AtomicUsize,
+    },
     time::Duration,
 };
 
@@ -37,7 +40,7 @@ use executors::{
     logs::{NormalizedEntryType, utils::patch::extract_normalized_entry_from_patch},
 };
 use futures::{FutureExt, StreamExt, TryStreamExt, stream::select};
-use git::GitService;
+use git::{DiffTarget, GitService};
 use serde_json::json;
 use services::services::{
     analytics::AnalyticsContext,
@@ -1411,55 +1414,123 @@ impl ContainerService for LocalContainerService {
         let repositories =
             WorkspaceRepo::find_repos_for_workspace(&self.db.pool, workspace.id).await?;
 
-        let mut streams = Vec::new();
+        let merge_commits = diff_stream::merge_commits_by_repo(&self.db.pool, workspace).await?;
 
-        let container_ref = self.ensure_container_exists(workspace).await?;
-        let workspace_root = PathBuf::from(container_ref);
+        let mut streams = Vec::new();
+        let mut live_repos = Vec::new();
 
         for repo in repositories {
-            let worktree_path = self.repo_work_dir(&workspace_root, &repo);
-            let branch = &workspace.branch;
+            // Merged repos: static diff of the merge commit against its parent.
+            // Needs no worktree and survives branch deletion. On failure (e.g.
+            // the merge commit is not available locally), fall back to the
+            // live worktree diff below.
+            if let Some(merge_commit) = merge_commits.get(&repo.id) {
+                let git = self.git().clone();
+                let repo_path = repo.path.clone();
+                let commit_sha = merge_commit.clone();
+                let diffs_result = tokio::task::spawn_blocking(move || {
+                    git.get_diffs(
+                        DiffTarget::Commit {
+                            repo_path: &repo_path,
+                            commit_sha: &commit_sha,
+                        },
+                        None,
+                    )
+                })
+                .await;
 
-            let Some(target_branch) = target_branches.get(&repo.id) else {
-                tracing::warn!(
-                    "Skipping diff stream for repo {}: no target branch configured",
-                    repo.name
-                );
-                continue;
-            };
+                match diffs_result {
+                    Ok(Ok(diffs)) => {
+                        let cumulative = Arc::new(AtomicUsize::new(0));
+                        let diffs = diffs
+                            .into_iter()
+                            .map(|mut diff| {
+                                diff_stream::apply_stream_omit_policy(
+                                    &mut diff,
+                                    &cumulative,
+                                    stats_only,
+                                );
+                                diff
+                            })
+                            .collect();
+                        streams.push(Box::pin(diff_stream::create_static(
+                            diffs,
+                            repo.id,
+                            Some(repo.name.clone()),
+                        )));
+                        continue;
+                    }
+                    Ok(Err(e)) => {
+                        tracing::warn!(
+                            "Failed to diff merge commit {merge_commit} for repo {}: {e}; falling back to worktree diff",
+                            repo.name
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to diff merge commit {merge_commit} for repo {}: {e}; falling back to worktree diff",
+                            repo.name
+                        );
+                    }
+                }
+            }
+            live_repos.push(repo);
+        }
 
-            let base_commit = match self
-                .git()
-                .get_base_commit(&repo.path, branch, target_branch)
-            {
-                Ok(c) => c,
-                Err(e) => {
+        // Only live (unmerged) repos need the container to exist; merged
+        // workspaces are diffed straight from the merge commit, so viewing
+        // them no longer recreates a cleaned-up worktree.
+        if !live_repos.is_empty() {
+            let container_ref = self.ensure_container_exists(workspace).await?;
+            let workspace_root = PathBuf::from(container_ref);
+
+            for repo in live_repos {
+                let worktree_path = self.repo_work_dir(&workspace_root, &repo);
+                let branch = &workspace.branch;
+
+                let Some(target_branch) = target_branches.get(&repo.id) else {
                     tracing::warn!(
-                        "Skipping diff stream for repo {}: failed to get base commit: {}",
-                        repo.name,
-                        e
+                        "Skipping diff stream for repo {}: no target branch configured",
+                        repo.name
                     );
                     continue;
-                }
-            };
+                };
 
-            let stream = self
-                .create_live_diff_stream(diff_stream::DiffStreamArgs {
-                    git_service: self.git().clone(),
-                    db: self.db().clone(),
-                    workspace_id: workspace.id,
-                    repo_id: repo.id,
-                    repo_path: repo.path.clone(),
-                    worktree_path: worktree_path.clone(),
-                    branch: branch.to_string(),
-                    target_branch: target_branch.clone(),
-                    base_commit: base_commit.clone(),
-                    stats_only,
-                    path_prefix: Some(repo.name.clone()),
-                })
-                .await?;
+                let Some((base_commit, pin_base_commit)) = diff_stream::resolve_base_commit(
+                    &self.db.pool,
+                    self.git(),
+                    workspace,
+                    &repo,
+                    target_branch,
+                )
+                .await
+                else {
+                    tracing::warn!(
+                        "Skipping diff stream for repo {}: failed to get base commit",
+                        repo.name
+                    );
+                    continue;
+                };
 
-            streams.push(Box::pin(stream));
+                let stream = self
+                    .create_live_diff_stream(diff_stream::DiffStreamArgs {
+                        git_service: self.git().clone(),
+                        db: self.db().clone(),
+                        workspace_id: workspace.id,
+                        repo_id: repo.id,
+                        repo_path: repo.path.clone(),
+                        worktree_path: worktree_path.clone(),
+                        branch: branch.to_string(),
+                        target_branch: target_branch.clone(),
+                        base_commit,
+                        pin_base_commit,
+                        stats_only,
+                        path_prefix: Some(repo.name.clone()),
+                    })
+                    .await?;
+
+                streams.push(Box::pin(stream));
+            }
         }
 
         if streams.is_empty() {

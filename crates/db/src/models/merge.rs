@@ -84,6 +84,13 @@ impl Merge {
         }
     }
 
+    pub fn repo_id(&self) -> Uuid {
+        match self {
+            Merge::Direct(direct) => direct.repo_id,
+            Merge::Pr(pr) => pr.repo_id,
+        }
+    }
+
     /// Create a direct merge record
     pub async fn create_direct(
         pool: &SqlitePool,

@@ -8,6 +8,7 @@ import { useNavigateWithSearch } from '@/hooks';
 import { paths } from '@/lib/paths';
 import { attemptsApi } from '@/lib/api';
 import { TaskCardHeader } from './TaskCardHeader';
+import { PriorityBadge } from './PriorityBadge';
 import { useTranslation } from 'react-i18next';
 
 type Task = TaskWithAttemptStatus;
@@ -119,6 +120,9 @@ export function TaskCard({
               : task.description}
           </p>
         )}
+        <div className="flex justify-end">
+          <PriorityBadge priority={task.priority} />
+        </div>
       </div>
     </KanbanCard>
   );
