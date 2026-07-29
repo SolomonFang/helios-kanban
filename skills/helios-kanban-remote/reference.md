@@ -103,9 +103,12 @@ POST /api/tasks
   "title": "Fix login bug",
   "description": "Optional details",
   "status": "todo",
+  "priority": "high",
   "iteration": "260717"
 }
 ```
+
+`priority` is optional: `urgent` | `high` | `medium` | `low` (default `medium`).
 
 ## Update task
 
@@ -113,6 +116,7 @@ POST /api/tasks
 PUT /api/tasks/{task_id}
 {
   "status": "inprogress",
+  "priority": "urgent",
   "title": "New title",
   "description": "Updated desc",
   "iteration": "260717"
@@ -148,6 +152,7 @@ POST /api/tasks/create-and-start
     "project_id": "uuid",
     "title": "Fix login bug",
     "description": "...",
+    "priority": "high",
     "iteration": "260717"
   },
   "executor_profile_id": {

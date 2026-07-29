@@ -67,6 +67,14 @@ $HK tasks cancel "<task_id>"   # also stops workspaces
 $HK tasks list --status todo --query 登录
 ```
 
+**User**: 建个紧急任务修线上 500，修完降到中
+
+```bash
+$HK tasks create "修复线上 500" --priority urgent
+$HK tasks list --priority urgent
+$HK tasks update "<task_id>" --priority medium
+```
+
 ## curl snippets
 
 ```bash

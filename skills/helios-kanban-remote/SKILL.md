@@ -37,6 +37,8 @@ Control a running [Helios Kanban](https://github.com/SolomonFang/vibe-kanban) in
 | "找登录相关任务" | `hk tasks list --query 登录` |
 | "260717 迭代" | `hk tasks list --iteration 260717` |
 | "创建任务" | `hk tasks create "标题" --desc "用 @coding-standards"` |
+| "紧急任务" | `hk tasks create "标题" --priority urgent` |
+| "看紧急/高优任务" | `hk tasks list --priority urgent` |
 | "有哪些分支" | `hk branches <repo_id> [--query develop]` |
 | "多仓启动" | `hk start <task_id> --repo <id1> --repo <id2>:develop` |
 | "有哪些 tag" | `hk tags` |
@@ -56,7 +58,7 @@ Cache `project_id` / `repo_id` in the conversation. Prefer env defaults so comma
 
 ```text
 1. hk repos / hk branches <repo>
-2. hk tasks create "标题" [--iteration CODE]
+2. hk tasks create "标题" [--iteration CODE] [--priority P]
 3. hk start <task_id> [--branch B] [--repo R]
      └─ or: hk create-and-start "标题" …
 4. hk status <task_id>                  # progress / diff summary
@@ -100,6 +102,7 @@ Requires `curl` and `jq`. See `scripts/hk.sh --help`.
 **项目**: {name}
 **任务**: {title} (`{id}`)
 **迭代**: {iteration or —}
+**优先级**: {priority}
 **状态**: {status} | running: {yes/no} | failed: {yes/no}
 **分支**: {target_branch}
 **Executor**: {executor}
@@ -122,6 +125,10 @@ Requires `curl` and `jq`. See `scripts/hk.sh --help`.
 ## Task statuses
 
 `todo` | `inprogress` | `inreview` | `done` | `cancelled`
+
+## Task priorities
+
+`urgent` | `high` | `medium` | `low` — default `medium` when omitted. Cards show a colored badge (red/orange/blue/gray).
 
 ## Safety rules
 
