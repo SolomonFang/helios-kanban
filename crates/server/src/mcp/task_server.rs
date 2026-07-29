@@ -4,7 +4,7 @@ use db::models::{
     project::Project,
     repo::Repo,
     tag::Tag,
-    task::{CreateTask, Task, TaskStatus, TaskWithAttemptStatus, UpdateTask},
+    task::{CreateTask, Task, TaskPriority, TaskStatus, TaskWithAttemptStatus, UpdateTask},
     workspace::{Workspace, WorkspaceContext},
 };
 use executors::{executors::BaseCodingAgent, profile::ExecutorProfileId};
@@ -42,6 +42,10 @@ pub struct CreateTaskRequest {
         description = "Optional iteration code to assign the task to (e.g. '260717'). Omit to leave unassigned."
     )]
     pub iteration: Option<String>,
+    #[schemars(
+        description = "Optional priority: 'urgent', 'high', 'medium', 'low'. Omit to use 'medium'."
+    )]
+    pub priority: Option<String>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -199,6 +203,8 @@ pub struct ListTasksRequest {
         description = "Optional status filter: 'todo', 'inprogress', 'inreview', 'done', 'cancelled'"
     )]
     pub status: Option<String>,
+    #[schemars(description = "Optional priority filter: 'urgent', 'high', 'medium', 'low'")]
+    pub priority: Option<String>,
     #[schemars(description = "Optional iteration code filter (e.g. '260717')")]
     pub iteration: Option<String>,
     #[schemars(description = "Optional case-insensitive search in title/description")]
@@ -215,6 +221,8 @@ pub struct TaskSummary {
     pub title: String,
     #[schemars(description = "Current status of the task")]
     pub status: String,
+    #[schemars(description = "Current priority of the task")]
+    pub priority: String,
     #[schemars(description = "Iteration code assigned to the task, if any")]
     pub iteration: Option<String>,
     #[schemars(description = "When the task was created")]
@@ -233,6 +241,7 @@ impl TaskSummary {
             id: task.id.to_string(),
             title: task.title.to_string(),
             status: task.status.to_string(),
+            priority: task.priority.to_string(),
             iteration: task.iteration.clone(),
             created_at: task.created_at.to_rfc3339(),
             updated_at: task.updated_at.to_rfc3339(),
@@ -252,6 +261,8 @@ pub struct TaskDetails {
     pub description: Option<String>,
     #[schemars(description = "Current status of the task")]
     pub status: String,
+    #[schemars(description = "Current priority of the task")]
+    pub priority: String,
     #[schemars(description = "Iteration code assigned to the task, if any")]
     pub iteration: Option<String>,
     #[schemars(description = "When the task was created")]
@@ -271,6 +282,7 @@ impl TaskDetails {
             title: task.title,
             description: task.description,
             status: task.status.to_string(),
+            priority: task.priority.to_string(),
             iteration: task.iteration,
             created_at: task.created_at.to_rfc3339(),
             updated_at: task.updated_at.to_rfc3339(),
@@ -291,6 +303,7 @@ pub struct ListTasksResponse {
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct ListTasksFilters {
     pub status: Option<String>,
+    pub priority: Option<String>,
     pub iteration: Option<String>,
     pub query: Option<String>,
     pub limit: i32,
@@ -306,6 +319,8 @@ pub struct UpdateTaskRequest {
     pub description: Option<String>,
     #[schemars(description = "New status: 'todo', 'inprogress', 'inreview', 'done', 'cancelled'")]
     pub status: Option<String>,
+    #[schemars(description = "New priority: 'urgent', 'high', 'medium', 'low'")]
+    pub priority: Option<String>,
     #[schemars(
         description = "New iteration code (e.g. '260717'). Pass empty string to clear. Omit to keep existing."
     )]
@@ -493,6 +508,10 @@ pub struct CreateTaskAndStartRequest {
         description = "Optional iteration code to assign the task to (e.g. '260717'). Omit to leave unassigned."
     )]
     pub iteration: Option<String>,
+    #[schemars(
+        description = "Optional priority: 'urgent', 'high', 'medium', 'low'. Omit to use 'medium'."
+    )]
+    pub priority: Option<String>,
     #[schemars(
         description = "Optional coding agent executor. Omit to use Settings default from /api/info → config.executor_profile."
     )]
@@ -1123,7 +1142,7 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Create a new task/ticket in a project. Always pass the `project_id` of the project you want to create the task in - it is required! Optionally pass `iteration` (e.g. '260717') to assign the task to an iteration."
+        description = "Create a new task/ticket in a project. Always pass the `project_id` of the project you want to create the task in - it is required! Optionally pass `iteration` (e.g. '260717') to assign the task to an iteration, and `priority` ('urgent', 'high', 'medium', 'low')."
     )]
     async fn create_task(
         &self,
@@ -1132,6 +1151,7 @@ impl TaskServer {
             title,
             description,
             iteration,
+            priority,
         }): Parameters<CreateTaskRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         // Expand @tagname references in description
@@ -1148,12 +1168,26 @@ impl TaskServer {
                 Some(trimmed.to_string())
             }
         });
+        let priority = match priority {
+            Some(ref priority_str) => match TaskPriority::from_str(priority_str) {
+                Ok(p) => Some(p),
+                Err(_) => {
+                    return Self::err(
+                        "Invalid priority. Valid values: 'urgent', 'high', 'medium', 'low'"
+                            .to_string(),
+                        Some(priority_str.to_string()),
+                    );
+                }
+            },
+            None => None,
+        };
 
         let url = self.url("/api/tasks");
 
         let mut create =
             CreateTask::from_title_description(project_id, title, expanded_description);
         create.iteration = iteration;
+        create.priority = priority;
 
         let task: Task = match self.send_json(self.client.post(&url).json(&create)).await {
             Ok(t) => t,
@@ -1379,6 +1413,7 @@ impl TaskServer {
         Parameters(ListTasksRequest {
             project_id,
             status,
+            priority,
             iteration,
             query,
             limit,
@@ -1391,6 +1426,20 @@ impl TaskServer {
                     return Self::err(
                         "Invalid status filter. Valid values: 'todo', 'inprogress', 'inreview', 'done', 'cancelled'".to_string(),
                         Some(status_str.to_string()),
+                    );
+                }
+            }
+        } else {
+            None
+        };
+        let priority_filter = if let Some(ref priority_str) = priority {
+            match TaskPriority::from_str(priority_str) {
+                Ok(p) => Some(p),
+                Err(_) => {
+                    return Self::err(
+                        "Invalid priority filter. Valid values: 'urgent', 'high', 'medium', 'low'"
+                            .to_string(),
+                        Some(priority_str.to_string()),
                     );
                 }
             }
@@ -1418,6 +1467,11 @@ impl TaskServer {
         let filtered = all_tasks.into_iter().filter(|t| {
             if let Some(ref want) = status_filter
                 && &t.status != want
+            {
+                return false;
+            }
+            if let Some(ref want) = priority_filter
+                && &t.priority != want
             {
                 return false;
             }
@@ -1452,6 +1506,7 @@ impl TaskServer {
             project_id: project_id.to_string(),
             applied_filters: ListTasksFilters {
                 status: status.clone(),
+                priority: priority.clone(),
                 iteration: iteration_filter,
                 query: query.clone(),
                 limit: task_limit as i32,
@@ -1593,7 +1648,7 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Update an existing task/ticket's title, description, status, or iteration. `task_id` is required. `title`, `description`, `status`, and `iteration` are optional."
+        description = "Update an existing task/ticket's title, description, status, priority, or iteration. `task_id` is required. `title`, `description`, `status`, `priority`, and `iteration` are optional."
     )]
     async fn update_task(
         &self,
@@ -1602,6 +1657,7 @@ impl TaskServer {
             title,
             description,
             status,
+            priority,
             iteration,
         }): Parameters<UpdateTaskRequest>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -1612,6 +1668,20 @@ impl TaskServer {
                     return Self::err(
                         "Invalid status filter. Valid values: 'todo', 'inprogress', 'inreview', 'done', 'cancelled'".to_string(),
                         Some(status_str.to_string()),
+                    );
+                }
+            }
+        } else {
+            None
+        };
+        let priority = if let Some(ref priority_str) = priority {
+            match TaskPriority::from_str(priority_str) {
+                Ok(p) => Some(p),
+                Err(_) => {
+                    return Self::err(
+                        "Invalid priority. Valid values: 'urgent', 'high', 'medium', 'low'"
+                            .to_string(),
+                        Some(priority_str.to_string()),
                     );
                 }
             }
@@ -1629,7 +1699,7 @@ impl TaskServer {
             title,
             description: expanded_description,
             status,
-            priority: None,
+            priority,
             parent_workspace_id: None,
             image_ids: None,
             iteration,
@@ -1880,6 +1950,7 @@ impl TaskServer {
             title,
             description,
             iteration,
+            priority,
             executor,
             variant,
             repos,
@@ -1905,9 +1976,23 @@ impl TaskServer {
                 Some(trimmed.to_string())
             }
         });
+        let priority = match priority {
+            Some(ref priority_str) => match TaskPriority::from_str(priority_str) {
+                Ok(p) => Some(p),
+                Err(_) => {
+                    return Self::err(
+                        "Invalid priority. Valid values: 'urgent', 'high', 'medium', 'low'"
+                            .to_string(),
+                        Some(priority_str.to_string()),
+                    );
+                }
+            },
+            None => None,
+        };
         let mut create =
             CreateTask::from_title_description(project_id, title, expanded_description);
         create.iteration = iteration;
+        create.priority = priority;
 
         // Same executor/repo resolution as start_workspace_session
         let (base_executor, variant) = match self
