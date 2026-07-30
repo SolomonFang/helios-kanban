@@ -32,9 +32,13 @@ schemars = { version = "1.0.4", features = ["derive", "chrono04", "uuid1", "pres
 serde_with = "3"
 async-trait = "0.1"
 
+# Optimized for small download size (binaries ship via npm platform packages).
+# fat LTO + single codegen unit costs CI build time; drop to lto = "thin"
+# if release builds get too slow.
 [profile.release]
-debug = 1
-split-debuginfo = "packed"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
 strip = true
 
 # Patches for codex-core's forked tokio-tungstenite with proxy support

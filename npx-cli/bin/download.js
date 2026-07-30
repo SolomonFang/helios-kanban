@@ -127,6 +127,22 @@ function cacheVersionKey() {
   return BINARY_TAG.startsWith("__") ? PKG_VERSION : BINARY_TAG;
 }
 
+// Resolve the installed per-platform npm package (esbuild-style
+// optionalDependency, e.g. helios-kanban-macos-arm64). Returns the package
+// directory (which contains the zips at its root), or null when the package
+// is not installed — npm skips optionalDependencies for other platforms.
+function getPlatformPackageDir(platform) {
+  try {
+    return path.dirname(
+      require.resolve(`helios-kanban-${platform}/package.json`, {
+        paths: [__dirname],
+      })
+    );
+  } catch {
+    return null;
+  }
+}
+
 async function ensureBinary(platform, binaryName, onProgress) {
   // Always prefer packaged local zips when available.
   // Works for both source repo (LOCAL_DEV_MODE) and installed npm package (bundled dist).
@@ -184,4 +200,5 @@ module.exports = {
   LOCAL_DIST_DIR,
   ensureBinary,
   getLatestVersion,
+  getPlatformPackageDir,
 };

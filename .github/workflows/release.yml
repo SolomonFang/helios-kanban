@@ -1,7 +1,10 @@
 name: Release (multi-platform npm)
 
-# Bundles binaries as GitHub Release assets and publishes a small npm package
-# (~100 KB) that downloads the correct zip per platform (npm rejects ~280MB tarballs).
+# Publishes a small npm wrapper package (~100 KB) plus one npm package per
+# platform (helios-kanban-<platform>, wired as optionalDependencies) holding
+# that platform's zipped binaries — installs download no binaries at runtime
+# (npm rejects ~280MB all-in-one tarballs). The same zips are also attached
+# to the GitHub Release as a fallback download source for the wrapper.
 #
 # Trigger manually from Actions tab. Choose version bump or pass "skip"
 # to publish the version currently in npx-cli/package.json.
@@ -283,7 +286,6 @@ jobs:
     env:
       VK_SHARED_API_BASE: "https://api.vibekanban.com"
       VITE_VK_SHARED_API_BASE: "https://api.vibekanban.com"
-      CARGO_PROFILE_RELEASE_DEBUG: "0"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -385,6 +387,60 @@ jobs:
           pattern: backend-*
           path: artifacts/
 
+      # One npm package per platform (esbuild-style). The `os`/`cpu` fields
+      # make npm install only the package matching the user's machine.
+      - name: Build per-platform npm packages
+        shell: bash
+        env:
+          NEW_VERSION: ${{ needs.bump-version.outputs.new_version }}
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("fs");
+          const path = require("path");
+
+          const PLATFORMS = {
+            "linux-x64": { os: "linux", cpu: "x64" },
+            "linux-arm64": { os: "linux", cpu: "arm64" },
+            "macos-x64": { os: "darwin", cpu: "x64" },
+            "macos-arm64": { os: "darwin", cpu: "arm64" },
+            "windows-x64": { os: "win32", cpu: "x64" },
+          };
+
+          for (const [platformDir, target] of Object.entries(PLATFORMS)) {
+            const artifacts = path.join("artifacts", `backend-${platformDir}`);
+            if (!fs.existsSync(artifacts)) {
+              console.log(`skip ${platformDir}: no artifacts`);
+              continue;
+            }
+            const pkgDir = path.join("platform-packages", `helios-kanban-${platformDir}`);
+            fs.mkdirSync(pkgDir, { recursive: true });
+            for (const f of fs.readdirSync(artifacts)) {
+              if (f.endsWith(".zip")) {
+                fs.copyFileSync(path.join(artifacts, f), path.join(pkgDir, f));
+              }
+            }
+            const pkg = {
+              name: `helios-kanban-${platformDir}`,
+              version: process.env.NEW_VERSION,
+              description: `Prebuilt helios-kanban binaries for ${target.os} ${target.cpu}`,
+              repository: {
+                type: "git",
+                url: "git+https://github.com/SolomonFang/vibe-kanban.git",
+              },
+              os: [target.os],
+              cpu: [target.cpu],
+              files: ["*.zip"],
+            };
+            fs.writeFileSync(
+              path.join(pkgDir, "package.json"),
+              JSON.stringify(pkg, null, 2) + "\n"
+            );
+            console.log(`packed ${pkg.name}@${pkg.version}`);
+          }
+          NODE
+          ls -lh platform-packages/*/
+
       - name: Prepare GitHub Release assets
         shell: bash
         run: |
@@ -400,7 +456,9 @@ jobs:
           echo "Release assets:"
           ls -lh release-assets
 
-      # npm rejects tarball uploads > ~100MB; bundle zips as GitHub Release assets instead.
+      # npm rejects tarball uploads > ~100MB; the zips stay on the GitHub
+      # Release as a fallback download source for platforms without an npm
+      # platform package (e.g. windows-arm64).
       - name: Create GitHub Release and upload binaries
         if: ${{ !inputs.dry_run }}
         uses: softprops/action-gh-release@v2
@@ -423,8 +481,10 @@ jobs:
           grep -q "releases/download" npx-cli/bin/download.js ||
             { echo "sed failed"; exit 1; }
 
-      - name: Shrink npm package (no bundled dist/)
+      - name: Shrink npm package and wire platform optionalDependencies
         shell: bash
+        env:
+          NEW_VERSION: ${{ needs.bump-version.outputs.new_version }}
         run: |
           set -euo pipefail
           rm -rf npx-cli/dist
@@ -433,6 +493,13 @@ jobs:
           const dir = "./npx-cli/package.json";
           const p = JSON.parse(fs.readFileSync(dir, "utf8"));
           p.files = ["bin", "README.md"];
+          // Pin the platform packages built in this run so npm installs the
+          // matching binaries automatically (skipped on other platforms).
+          p.optionalDependencies = Object.fromEntries(
+            fs
+              .readdirSync("./platform-packages")
+              .map((name) => [name, process.env.NEW_VERSION])
+          );
           fs.writeFileSync(dir, JSON.stringify(p, null, 2) + "\n");
           NODE
 
@@ -440,6 +507,18 @@ jobs:
         run: |
           cd npx-cli
           npm pack --dry-run
+
+      # Platform packages go first so the wrapper's optionalDependencies
+      # already resolve when it is published.
+      - name: Publish platform packages to npm
+        if: ${{ !inputs.dry_run }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          for d in platform-packages/*/; do
+            (cd "$d" && npm publish --access public --registry https://registry.npmjs.org)
+          done
 
       - name: Publish to npm
         if: ${{ !inputs.dry_run }}

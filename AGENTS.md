@@ -7,7 +7,7 @@
 - `remote-frontend/`: Remote deployment frontend.
 - `shared/`: Generated TypeScript types (`shared/types.ts`). Do not edit directly.
 - `assets/`, `dev_assets_seed/`, `dev_assets/`: Packaged and local dev assets.
-- `npx-cli/`: Files published to the npm CLI package.
+- `npx-cli/`: Files published to the npm CLI package. Releases (`release.yml`) publish a tiny wrapper plus per-platform binary packages (`helios-kanban-<platform>` wired as `optionalDependencies`, zips at package root), so installs skip runtime downloads; GitHub Release assets remain as fallback.
 - `scripts/`: Dev helpers (ports, DB preparation).
 - `docs/`: Documentation files.
 

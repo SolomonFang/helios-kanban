@@ -4,7 +4,7 @@ const { execSync, spawn } = require("child_process");
 const AdmZip = require("adm-zip");
 const path = require("path");
 const fs = require("fs");
-const { ensureBinary, BINARY_TAG, CACHE_DIR, LOCAL_DEV_MODE, LOCAL_DIST_DIR, R2_BASE_URL, getLatestVersion } = require("./download");
+const { ensureBinary, BINARY_TAG, CACHE_DIR, LOCAL_DEV_MODE, LOCAL_DIST_DIR, R2_BASE_URL, getLatestVersion, getPlatformPackageDir } = require("./download");
 
 const CLI_VERSION = require("../package.json").version;
 
@@ -72,13 +72,22 @@ function getBinaryName(base) {
 
 const platformDir = getPlatformDir();
 const bundledPlatformDir = path.join(LOCAL_DIST_DIR, platformDir);
-const usingBundledDist = fs.existsSync(bundledPlatformDir);
+// Bundled dist only counts when it actually ships zips (an empty leftover
+// dist/<platform>/ directory must not shadow the other sources).
+const usingBundledDist =
+  fs.existsSync(bundledPlatformDir) &&
+  fs.readdirSync(bundledPlatformDir).some((f) => f.endsWith(".zip"));
+// Per-platform npm package installed via optionalDependencies (esbuild-style).
+// Zips live at the package root; extraction happens next to them.
+const platformPkgDir = usingBundledDist ? null : getPlatformPackageDir(platformDir);
 const cacheKey = BINARY_TAG.startsWith("__") ? CLI_VERSION : BINARY_TAG;
-// If the package ships a zip for this platform, use it directly.
-// Otherwise fall back to the global cache (where remote downloads land).
+// Resolution order: bundled dist/ zips → per-platform npm package zips →
+// global cache (where remote downloads land).
 const versionCacheDir = usingBundledDist
   ? bundledPlatformDir
-  : path.join(CACHE_DIR, cacheKey, platformDir);
+  : platformPkgDir
+    ? platformPkgDir
+    : path.join(CACHE_DIR, cacheKey, platformDir);
 
 function showProgress(downloaded, total) {
   const percent = total ? Math.round((downloaded / total) * 100) : 0;
@@ -195,7 +204,9 @@ async function main() {
       ? " (local dev)"
       : usingBundledDist
         ? " (bundled)"
-        : "";
+        : platformPkgDir
+          ? " (npm)"
+          : "";
     console.log(`Starting vibe-kanban v${CLI_VERSION}${modeLabel}...`);
     await extractAndRun("vibe-kanban", (bin) => {
       if (platform === "win32") {
