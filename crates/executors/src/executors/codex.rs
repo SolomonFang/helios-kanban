@@ -2,13 +2,12 @@ pub mod client;
 pub mod jsonrpc;
 pub mod normalize_logs;
 pub mod review;
-pub mod session;
 pub mod slash_commands;
 use std::{
     collections::HashMap,
     env,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 /// Returns the Codex home directory.
@@ -24,10 +23,25 @@ pub fn codex_home() -> Option<PathBuf> {
     dirs::home_dir().map(|home| home.join(".codex"))
 }
 
+pub(crate) fn fork_params_from(thread_id: String, params: ThreadStartParams) -> ThreadForkParams {
+    ThreadForkParams {
+        thread_id,
+        model: params.model,
+        model_provider: params.model_provider,
+        cwd: params.cwd,
+        approval_policy: params.approval_policy,
+        sandbox: params.sandbox,
+        config: params.config,
+        base_instructions: params.base_instructions,
+        developer_instructions: params.developer_instructions,
+        ..Default::default()
+    }
+}
+
 use async_trait::async_trait;
-use codex_app_server_protocol::{NewConversationParams, ReviewTarget};
-use codex_protocol::{
-    config_types::SandboxMode as CodexSandboxMode, protocol::AskForApproval as CodexAskForApproval,
+use codex_app_server_protocol::{
+    AskForApproval as V2AskForApproval, ReviewTarget, SandboxMode as V2SandboxMode,
+    ThreadForkParams, ThreadStartParams, UserInput,
 };
 use command_group::AsyncCommandGroup;
 use derivative::Derivative;
@@ -43,7 +57,6 @@ use self::{
     client::{AppServerClient, LogWriter},
     jsonrpc::{ExitSignalSender, JsonRpcPeer},
     normalize_logs::{Error, normalize_logs},
-    session::SessionHandler,
 };
 use crate::{
     approvals::ExecutorApprovalService,
@@ -279,9 +292,25 @@ impl StandardCodingAgentExecutor for Codex {
 
 impl Codex {
     pub fn base_command() -> &'static str {
-        // Pinned to 0.98.0: the app-server protocol used here (newConversation etc.)
-        // was removed in later codex versions in favor of the thread/* v2 API.
-        "npx -y @openai/codex@0.98.0"
+        if Self::detect_codex_binary() {
+            "codex"
+        } else {
+            "npx -y @openai/codex@0.146.0"
+        }
+    }
+
+    /// Auto-detect whether the native `codex` binary is available in PATH.
+    /// Uses a OnceLock for caching so PATH lookup only happens once per process lifetime.
+    fn detect_codex_binary() -> bool {
+        static DETECTED: OnceLock<bool> = OnceLock::new();
+        *DETECTED.get_or_init(|| {
+            let found = which::which("codex").is_ok();
+            tracing::info!(
+                "Native Codex binary detection: {}",
+                if found { "found" } else { "not found" }
+            );
+            found
+        })
     }
 
     fn build_command_builder(&self) -> Result<CommandBuilder, CommandBuildError> {
@@ -294,38 +323,66 @@ impl Codex {
         apply_overrides(builder, &self.cmd)
     }
 
-    fn build_new_conversation_params(&self, cwd: &Path) -> NewConversationParams {
+    fn build_thread_start_params(&self, cwd: &Path) -> ThreadStartParams {
         let sandbox = match self.sandbox.as_ref() {
-            None | Some(SandboxMode::Auto) => Some(CodexSandboxMode::WorkspaceWrite), // match the Auto preset in codex
-            Some(SandboxMode::ReadOnly) => Some(CodexSandboxMode::ReadOnly),
-            Some(SandboxMode::WorkspaceWrite) => Some(CodexSandboxMode::WorkspaceWrite),
-            Some(SandboxMode::DangerFullAccess) => Some(CodexSandboxMode::DangerFullAccess),
+            None | Some(SandboxMode::Auto) => Some(V2SandboxMode::WorkspaceWrite), // match the Auto preset in codex
+            Some(SandboxMode::ReadOnly) => Some(V2SandboxMode::ReadOnly),
+            Some(SandboxMode::WorkspaceWrite) => Some(V2SandboxMode::WorkspaceWrite),
+            Some(SandboxMode::DangerFullAccess) => Some(V2SandboxMode::DangerFullAccess),
         };
 
         let approval_policy = match self.ask_for_approval.as_ref() {
             None if matches!(self.sandbox.as_ref(), None | Some(SandboxMode::Auto)) => {
                 // match the Auto preset in codex
-                Some(CodexAskForApproval::OnRequest)
+                Some(V2AskForApproval::OnRequest)
             }
             None => None,
-            Some(AskForApproval::UnlessTrusted) => Some(CodexAskForApproval::UnlessTrusted),
-            Some(AskForApproval::OnFailure) => Some(CodexAskForApproval::OnFailure),
-            Some(AskForApproval::OnRequest) => Some(CodexAskForApproval::OnRequest),
-            Some(AskForApproval::Never) => Some(CodexAskForApproval::Never),
+            Some(AskForApproval::UnlessTrusted) => Some(V2AskForApproval::UnlessTrusted),
+            // The v2 wire protocol dropped OnFailure; OnRequest is the closest equivalent.
+            Some(AskForApproval::OnFailure) => Some(V2AskForApproval::OnRequest),
+            Some(AskForApproval::OnRequest) => Some(V2AskForApproval::OnRequest),
+            Some(AskForApproval::Never) => Some(V2AskForApproval::Never),
         };
 
-        NewConversationParams {
+        let mut config = self.build_config_overrides();
+        // V1 top-level params that moved into config overrides in v2
+        if let Some(profile) = &self.profile {
+            config
+                .get_or_insert_with(HashMap::new)
+                .insert("profile".to_string(), Value::String(profile.clone()));
+        }
+        if let Some(include) = self.include_apply_patch_tool {
+            config
+                .get_or_insert_with(HashMap::new)
+                .insert("include_apply_patch_tool".to_string(), Value::Bool(include));
+        }
+        if let Some(compact) = &self.compact_prompt {
+            config
+                .get_or_insert_with(HashMap::new)
+                .insert("compact_prompt".to_string(), Value::String(compact.clone()));
+        }
+        if !matches!(approval_policy, None | Some(V2AskForApproval::Never)) {
+            let map = config.get_or_insert_with(HashMap::new);
+            map.insert(
+                "features.default_mode_request_user_input".to_string(),
+                Value::Bool(true),
+            );
+            map.insert(
+                "suppress_unstable_features_warning".to_string(),
+                Value::Bool(true),
+            );
+        }
+
+        ThreadStartParams {
             model: self.model.clone(),
-            profile: self.profile.clone(),
             cwd: Some(cwd.to_string_lossy().to_string()),
             approval_policy,
             sandbox,
-            config: self.build_config_overrides(),
+            config,
             base_instructions: self.base_instructions.clone(),
-            include_apply_patch_tool: self.include_apply_patch_tool,
             model_provider: self.model_provider.clone(),
-            compact_prompt: self.compact_prompt.clone(),
             developer_instructions: self.developer_instructions.clone(),
+            ..Default::default()
         }
     }
 
@@ -370,7 +427,7 @@ impl Codex {
         resume_session: Option<&str>,
         env: &ExecutionEnv,
     ) -> Result<SpawnedChild, ExecutorError> {
-        let params = self.build_new_conversation_params(current_dir);
+        let params = self.build_thread_start_params(current_dir);
         let resume_session = resume_session.map(|s| s.to_string());
 
         self.spawn_app_server(
@@ -392,49 +449,43 @@ impl Codex {
     }
 
     async fn launch_codex_agent(
-        conversation_params: NewConversationParams,
+        thread_start_params: ThreadStartParams,
         resume_session: Option<String>,
         combined_prompt: String,
         client: Arc<AppServerClient>,
     ) -> Result<(), ExecutorError> {
-        let auth_status = client.get_auth_status().await?;
-        if auth_status.requires_openai_auth.unwrap_or(true) && auth_status.auth_method.is_none() {
+        let account = client.get_account().await?;
+        if account.requires_openai_auth && account.account.is_none() {
             return Err(ExecutorError::AuthRequired(
                 "Codex authentication required".to_string(),
             ));
         }
-        match resume_session {
+
+        let thread_id = match resume_session {
             None => {
-                let params = conversation_params;
-                let response = client.new_conversation(params).await?;
-                let conversation_id = response.conversation_id;
-                client.register_session(&conversation_id).await?;
-                client.add_conversation_listener(conversation_id).await?;
-                client
-                    .send_user_message(conversation_id, combined_prompt)
-                    .await?;
+                let response = client.thread_start(thread_start_params).await?;
+                response.thread.id
             }
             Some(session_id) => {
-                let (rollout_path, _forked_session_id) =
-                    SessionHandler::fork_rollout_file(&session_id)
-                        .map_err(|e| ExecutorError::FollowUpNotSupported(e.to_string()))?;
-                let overrides = conversation_params;
                 let response = client
-                    .resume_conversation(rollout_path.clone(), overrides)
+                    .thread_fork(fork_params_from(session_id, thread_start_params))
                     .await?;
-                tracing::debug!(
-                    "resuming session using rollout file {}, response {:?}",
-                    rollout_path.display(),
-                    response
-                );
-                let conversation_id = response.conversation_id;
-                client.register_session(&conversation_id).await?;
-                client.add_conversation_listener(conversation_id).await?;
-                client
-                    .send_user_message(conversation_id, combined_prompt)
-                    .await?;
+                tracing::debug!("forked thread, new thread_id={}", response.thread.id);
+                response.thread.id
             }
-        }
+        };
+
+        client.register_session(&thread_id).await?;
+        client
+            .turn_start(
+                thread_id,
+                vec![UserInput::Text {
+                    text: combined_prompt,
+                    text_elements: vec![],
+                }],
+            )
+            .await?;
+
         Ok(())
     }
 
