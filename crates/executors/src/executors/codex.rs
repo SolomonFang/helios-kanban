@@ -8,7 +8,7 @@ use std::{
     collections::HashMap,
     env,
     path::{Path, PathBuf},
-    sync::{Arc, OnceLock},
+    sync::Arc,
 };
 
 /// Returns the Codex home directory.
@@ -277,27 +277,11 @@ impl StandardCodingAgentExecutor for Codex {
     }
 }
 
-/// Auto-detect whether a `codex` binary is available in PATH.
-/// Uses a OnceLock for caching so PATH lookup only happens once per process lifetime.
-fn detect_codex_binary() -> bool {
-    static DETECTED: OnceLock<bool> = OnceLock::new();
-    *DETECTED.get_or_init(|| {
-        let found = which::which("codex").is_ok();
-        tracing::info!(
-            "Local Codex binary detection: {}",
-            if found { "found" } else { "not found" }
-        );
-        found
-    })
-}
-
 impl Codex {
     pub fn base_command() -> &'static str {
-        if detect_codex_binary() {
-            "codex"
-        } else {
-            "npx -y @openai/codex@0.146.0"
-        }
+        // Pinned to 0.98.0: the app-server protocol used here (newConversation etc.)
+        // was removed in later codex versions in favor of the thread/* v2 API.
+        "npx -y @openai/codex@0.98.0"
     }
 
     fn build_command_builder(&self) -> Result<CommandBuilder, CommandBuildError> {
