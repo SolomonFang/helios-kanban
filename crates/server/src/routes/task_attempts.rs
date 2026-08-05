@@ -553,15 +553,7 @@ pub async fn merge_task_attempt(
     let task_uuid_str = task.id.to_string();
     let first_uuid_section = task_uuid_str.split('-').next().unwrap_or(&task_uuid_str);
 
-    let mut commit_message = format!("{} (vibe-kanban {})", task.title, first_uuid_section);
-
-    // Add description on next line if it exists
-    if let Some(description) = &task.description
-        && !description.trim().is_empty()
-    {
-        commit_message.push_str("\n\n");
-        commit_message.push_str(description);
-    }
+    let commit_message = format!("{} (helios-kanban {})", task.title, first_uuid_section);
 
     let merge_commit_id = deployment.git().merge_changes(
         &repo.path,
