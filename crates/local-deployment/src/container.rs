@@ -1425,52 +1425,82 @@ impl ContainerService for LocalContainerService {
             // the merge commit is not available locally), fall back to the
             // live worktree diff below.
             if let Some(merge_commit) = merge_commits.get(&repo.id) {
-                let git = self.git().clone();
-                let repo_path = repo.path.clone();
-                let commit_sha = merge_commit.clone();
-                let diffs_result = tokio::task::spawn_blocking(move || {
-                    git.get_diffs(
-                        DiffTarget::Commit {
-                            repo_path: &repo_path,
-                            commit_sha: &commit_sha,
-                        },
-                        None,
-                    )
-                })
-                .await;
+                // A direct merge resets the task branch to the merge commit; if
+                // the branch has moved on (or an existing worktree has
+                // uncommitted changes), the workspace was restarted after the
+                // merge and the live diff is the current one.
+                let restarted = merge_commit.direct && {
+                    let git = self.git().clone();
+                    let repo_path = repo.path.clone();
+                    let branch = workspace.branch.clone();
+                    let sha = merge_commit.sha.clone();
+                    let worktree_path = workspace
+                        .container_ref
+                        .as_ref()
+                        .map(|container_ref| self.repo_work_dir(&PathBuf::from(container_ref), &repo));
+                    tokio::task::spawn_blocking(move || {
+                        diff_stream::has_work_since_merge(
+                            &git,
+                            &repo_path,
+                            &branch,
+                            &sha,
+                            worktree_path.as_deref(),
+                        )
+                    })
+                    .await
+                    .unwrap_or(false)
+                };
 
-                match diffs_result {
-                    Ok(Ok(diffs)) => {
-                        let cumulative = Arc::new(AtomicUsize::new(0));
-                        let diffs = diffs
-                            .into_iter()
-                            .map(|mut diff| {
-                                diff_stream::apply_stream_omit_policy(
-                                    &mut diff,
-                                    &cumulative,
-                                    stats_only,
-                                );
-                                diff
-                            })
-                            .collect();
-                        streams.push(Box::pin(diff_stream::create_static(
-                            diffs,
-                            repo.id,
-                            Some(repo.name.clone()),
-                        )));
-                        continue;
-                    }
-                    Ok(Err(e)) => {
-                        tracing::warn!(
-                            "Failed to diff merge commit {merge_commit} for repo {}: {e}; falling back to worktree diff",
-                            repo.name
-                        );
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "Failed to diff merge commit {merge_commit} for repo {}: {e}; falling back to worktree diff",
-                            repo.name
-                        );
+                if !restarted {
+                    let git = self.git().clone();
+                    let repo_path = repo.path.clone();
+                    let commit_sha = merge_commit.sha.clone();
+                    let diffs_result = tokio::task::spawn_blocking(move || {
+                        git.get_diffs(
+                            DiffTarget::Commit {
+                                repo_path: &repo_path,
+                                commit_sha: &commit_sha,
+                            },
+                            None,
+                        )
+                    })
+                    .await;
+
+                    match diffs_result {
+                        Ok(Ok(diffs)) => {
+                            let cumulative = Arc::new(AtomicUsize::new(0));
+                            let diffs = diffs
+                                .into_iter()
+                                .map(|mut diff| {
+                                    diff_stream::apply_stream_omit_policy(
+                                        &mut diff,
+                                        &cumulative,
+                                        stats_only,
+                                    );
+                                    diff
+                                })
+                                .collect();
+                            streams.push(Box::pin(diff_stream::create_static(
+                                diffs,
+                                repo.id,
+                                Some(repo.name.clone()),
+                            )));
+                            continue;
+                        }
+                        Ok(Err(e)) => {
+                            tracing::warn!(
+                                "Failed to diff merge commit {} for repo {}: {e}; falling back to worktree diff",
+                                merge_commit.sha,
+                                repo.name
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to diff merge commit {} for repo {}: {e}; falling back to worktree diff",
+                                merge_commit.sha,
+                                repo.name
+                            );
+                        }
                     }
                 }
             }

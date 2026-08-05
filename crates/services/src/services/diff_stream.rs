@@ -78,21 +78,68 @@ pub async fn resolve_base_commit(
         .map(|commit| (commit, false))
 }
 
+/// A merge commit recorded for a workspace repo.
+#[derive(Debug, Clone)]
+pub struct MergeCommit {
+    pub sha: String,
+    /// Direct merges rewrite the local task branch to point at the merge
+    /// commit, which lets us detect new work on top of the merge. PR merges
+    /// leave the local branch untouched, so this detection is not possible.
+    pub direct: bool,
+}
+
 /// Latest merge commit per repo for a workspace, keyed by repo id.
 /// `Merge::find_by_workspace_id` returns rows newest-first, so the first
 /// commit seen per repo wins.
 pub async fn merge_commits_by_repo(
     pool: &SqlitePool,
     workspace: &Workspace,
-) -> Result<HashMap<Uuid, String>, sqlx::Error> {
+) -> Result<HashMap<Uuid, MergeCommit>, sqlx::Error> {
     let merges = Merge::find_by_workspace_id(pool, workspace.id).await?;
     let mut by_repo = HashMap::new();
     for merge in merges {
-        if let Some(commit) = merge.merge_commit() {
-            by_repo.entry(merge.repo_id()).or_insert(commit);
+        let direct = matches!(merge, Merge::Direct(_));
+        if let Some(sha) = merge.merge_commit() {
+            by_repo
+                .entry(merge.repo_id())
+                .or_insert(MergeCommit { sha, direct });
         }
     }
     Ok(by_repo)
+}
+
+/// Whether new work exists on top of a direct merge: the branch moved past
+/// the merge commit, or an existing worktree has uncommitted changes. In
+/// both cases a live worktree diff (against the merge base) reflects the
+/// current state; otherwise the static merge-commit diff is authoritative.
+pub fn has_work_since_merge(
+    git: &GitService,
+    repo_path: &Path,
+    branch: &str,
+    merge_commit: &str,
+    worktree_path: Option<&Path>,
+) -> bool {
+    match branch_head_commit(repo_path, branch) {
+        // Branch deleted: the merge commit diff is all we can show.
+        None => return false,
+        Some(head) if head == merge_commit => {}
+        Some(_) => return true,
+    }
+
+    if let Some(worktree) = worktree_path
+        && worktree.exists()
+        && matches!(git.is_worktree_clean(worktree), Ok(false))
+    {
+        return true;
+    }
+
+    false
+}
+
+fn branch_head_commit(repo_path: &Path, branch: &str) -> Option<String> {
+    let repo = git2::Repository::open(repo_path).ok()?;
+    let branch = repo.find_branch(branch, git2::BranchType::Local).ok()?;
+    Some(branch.get().peel_to_commit().ok()?.id().to_string())
 }
 
 /// Computes diff stats for a workspace by comparing against target branches.
@@ -119,24 +166,54 @@ pub async fn compute_diff_stats(
         let repo = repo_with_branch.repo;
 
         // Merged repos: diff the merge commit against its parent. Works even
-        // after the worktree has been cleaned up or the branch deleted.
+        // after the worktree has been cleaned up or the branch deleted. If a
+        // direct merge was followed by new work, the live worktree diff below
+        // is authoritative instead.
         let merged_diffs = match merge_commits.get(&repo.id) {
             Some(merge_commit) => {
-                let git = git.clone();
-                let repo_path = repo.path.clone();
-                let commit_sha = merge_commit.clone();
-                tokio::task::spawn_blocking(move || {
-                    git.get_diffs(
-                        DiffTarget::Commit {
-                            repo_path: &repo_path,
-                            commit_sha: &commit_sha,
-                        },
-                        None,
-                    )
-                })
-                .await
-                .ok()
-                .and_then(Result::ok)
+                let restarted = merge_commit.direct && {
+                    let git = git.clone();
+                    let repo_path = repo.path.clone();
+                    let branch = workspace.branch.clone();
+                    let sha = merge_commit.sha.clone();
+                    let worktree_path = workspace.container_ref.as_ref().map(|container_ref| {
+                        if repo.use_worktree {
+                            PathBuf::from(container_ref).join(&repo.name)
+                        } else {
+                            repo.path.clone()
+                        }
+                    });
+                    tokio::task::spawn_blocking(move || {
+                        has_work_since_merge(
+                            &git,
+                            &repo_path,
+                            &branch,
+                            &sha,
+                            worktree_path.as_deref(),
+                        )
+                    })
+                    .await
+                    .unwrap_or(false)
+                };
+                if restarted {
+                    None
+                } else {
+                    let git = git.clone();
+                    let repo_path = repo.path.clone();
+                    let commit_sha = merge_commit.sha.clone();
+                    tokio::task::spawn_blocking(move || {
+                        git.get_diffs(
+                            DiffTarget::Commit {
+                                repo_path: &repo_path,
+                                commit_sha: &commit_sha,
+                            },
+                            None,
+                        )
+                    })
+                    .await
+                    .ok()
+                    .and_then(Result::ok)
+                }
             }
             None => None,
         };
