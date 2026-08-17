@@ -373,6 +373,16 @@
           "model": "glm-4.6"
         }
       }
+    },
+    "DEEPSEEK_HARNESS": {
+      "DEFAULT": {
+        "DEEPSEEK_HARNESS": {}
+      },
+      "PRO": {
+        "DEEPSEEK_HARNESS": {
+          "model": "deepseek-v4-pro"
+        }
+      }
     }
   }
 }

@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "append_prompt": {
+      "title": "Append Prompt",
+      "description": "Extra text appended to the prompt",
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "textarea",
+      "default": null
+    },
+    "model": {
+      "title": "Model",
+      "description": "Model to use, passed via the DSH_MODEL environment variable: \"deepseek-v4-flash\" (default), \"deepseek-v4-pro\", or any custom model id",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "base_command_override": {
+      "title": "Base Command Override",
+      "description": "Override the base command with a custom command",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "additional_params": {
+      "title": "Additional Parameters",
+      "description": "Additional parameters to append to the base command",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "env": {
+      "title": "Environment Variables",
+      "description": "Environment variables to set when running the executor",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "description": "DeepSeek Harness (`dsh`) is driven through its official one-shot headless\nprofile: `dsh --profile headless \"<prompt>\"`. Upstream is still in\ndeveloper preview — the headless profile only streams plain text (no\nstructured tool events) and has no session-resume surface, so follow-ups\nare not supported yet.",
+  "type": "object"
+}

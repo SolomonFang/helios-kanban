@@ -353,7 +353,7 @@ pub struct StartWorkspaceSessionRequest {
     #[schemars(description = "The ID of the task to start")]
     pub task_id: Uuid,
     #[schemars(
-        description = "Optional coding agent executor ('CLAUDE_CODE', 'AMP', 'GEMINI', 'CODEX', 'OPENCODE', 'CURSOR_AGENT', 'QWEN_CODE', 'COPILOT', 'DROID', 'REASONIX', 'KIMI_CLI'). Omit to use Settings default from /api/info → config.executor_profile."
+        description = "Optional coding agent executor ('CLAUDE_CODE', 'AMP', 'GEMINI', 'CODEX', 'OPENCODE', 'CURSOR_AGENT', 'QWEN_CODE', 'COPILOT', 'DROID', 'REASONIX', 'KIMI_CLI', 'DEEPSEEK_HARNESS'). Omit to use Settings default from /api/info → config.executor_profile."
     )]
     pub executor: Option<String>,
     #[schemars(description = "Optional executor variant, if needed")]
@@ -418,7 +418,7 @@ pub struct FollowUpSessionRequest {
     #[schemars(description = "The follow-up instruction/prompt for the agent")]
     pub prompt: String,
     #[schemars(
-        description = "Optional coding agent executor ('CLAUDE_CODE', 'AMP', 'GEMINI', 'CODEX', 'OPENCODE', 'CURSOR_AGENT', 'QWEN_CODE', 'COPILOT', 'DROID', 'REASONIX', 'KIMI_CLI'). Omit to reuse the session's executor (falls back to Settings default)."
+        description = "Optional coding agent executor ('CLAUDE_CODE', 'AMP', 'GEMINI', 'CODEX', 'OPENCODE', 'CURSOR_AGENT', 'QWEN_CODE', 'COPILOT', 'DROID', 'REASONIX', 'KIMI_CLI', 'DEEPSEEK_HARNESS'). Omit to reuse the session's executor (falls back to Settings default)."
     )]
     pub executor: Option<String>,
     #[schemars(description = "Optional executor variant, if needed")]

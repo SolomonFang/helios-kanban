@@ -401,7 +401,8 @@ impl CodingAgent {
             | CodingAgent::Amp(_)
             | CodingAgent::Droid(_)
             | CodingAgent::Reasonix(_)
-            | CodingAgent::KimiCli(_) => Passthrough,
+            | CodingAgent::KimiCli(_)
+            | CodingAgent::DeepseekHarness(_) => Passthrough,
             CodingAgent::QwenCode(_) | CodingAgent::Gemini(_) => Gemini,
             CodingAgent::CursorAgent(_) => Cursor,
             CodingAgent::Codex(_) => Codex,

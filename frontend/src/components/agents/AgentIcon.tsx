@@ -42,6 +42,8 @@ export function getAgentName(
       return 'Droid';
     case BaseCodingAgent.REASONIX:
       return 'Reasonix';
+    case BaseCodingAgent.DEEPSEEK_HARNESS:
+      return 'DeepSeek Harness';
   }
 }
 
@@ -91,6 +93,9 @@ export function AgentIcon({ agent, className = 'h-4 w-4' }: AgentIconProps) {
       break;
     case BaseCodingAgent.REASONIX:
       iconPath = `/agents/reasonix${suffix}.svg`;
+      break;
+    case BaseCodingAgent.DEEPSEEK_HARNESS:
+      iconPath = `/agents/deepseek_harness${suffix}.svg`;
       break;
     default:
       return null;
