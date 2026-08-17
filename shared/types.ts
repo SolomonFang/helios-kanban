@@ -595,7 +595,7 @@ export type DroidReasoningEffort = "none" | "dynamic" | "off" | "low" | "medium"
 
 export type Reasonix = { append_prompt: AppendPrompt, model?: string | null, dangerously_skip_permissions?: boolean | null, use_code_mode?: boolean | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
 
-export type DeepseekHarness = { append_prompt: AppendPrompt, model?: string | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
+export type DeepseekHarness = { append_prompt: AppendPrompt, model?: string | null, dangerously_skip_permissions?: boolean | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
 
 export type AppendPrompt = string | null;
 

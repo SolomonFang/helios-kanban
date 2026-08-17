@@ -205,10 +205,9 @@ impl CodingAgent {
             Self::Amp(_) | Self::Gemini(_) | Self::QwenCode(_) | Self::KimiCli(_) => {
                 vec![BaseAgentCapability::SessionFork]
             }
+            Self::DeepseekHarness(_) => vec![BaseAgentCapability::SessionFork],
             Self::CursorAgent(_) => vec![BaseAgentCapability::SetupHelper],
-            Self::Copilot(_) | Self::Droid(_) | Self::Reasonix(_) | Self::DeepseekHarness(_) => {
-                vec![]
-            }
+            Self::Copilot(_) | Self::Droid(_) | Self::Reasonix(_) => vec![],
             #[cfg(feature = "qa-mode")]
             Self::QaMock(_) => vec![], // QA mock doesn't need special capabilities
         }

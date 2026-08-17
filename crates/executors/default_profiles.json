@@ -376,12 +376,18 @@
     },
     "DEEPSEEK_HARNESS": {
       "DEFAULT": {
-        "DEEPSEEK_HARNESS": {}
+        "DEEPSEEK_HARNESS": {
+          "dangerously_skip_permissions": true
+        }
       },
       "PRO": {
         "DEEPSEEK_HARNESS": {
-          "model": "deepseek-v4-pro"
+          "model": "deepseek-v4-pro",
+          "dangerously_skip_permissions": true
         }
+      },
+      "APPROVALS": {
+        "DEEPSEEK_HARNESS": {}
       }
     }
   }

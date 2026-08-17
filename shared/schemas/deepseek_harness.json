@@ -13,9 +13,17 @@
     },
     "model": {
       "title": "Model",
-      "description": "Model to use, passed via the DSH_MODEL environment variable: \"deepseek-v4-flash\" (default), \"deepseek-v4-pro\", or any custom model id",
+      "description": "Model to use on the deepseek-official provider route: \"deepseek-v4-flash\" (default) or \"deepseek-v4-pro\"",
       "type": [
         "string",
+        "null"
+      ]
+    },
+    "dangerously_skip_permissions": {
+      "title": "Dangerously Skip Permissions (YOLO)",
+      "description": "Auto-approve all permission requests instead of asking",
+      "type": [
+        "boolean",
         "null"
       ]
     },
@@ -50,6 +58,6 @@
       }
     }
   },
-  "description": "DeepSeek Harness (`dsh`) is driven through its official one-shot headless\nprofile: `dsh --profile headless \"<prompt>\"`. Upstream is still in\ndeveloper preview — the headless profile only streams plain text (no\nstructured tool events) and has no session-resume surface, so follow-ups\nare not supported yet.",
+  "description": "DeepSeek Harness (`dsh`) is driven through the official\n`@deepseek-ai/dsh-acp` server: an automation-only Agent Client Protocol\ntransport over stdio. The shared ACP harness drives the session, detects\nturn completion, streams committed assistant messages and supports\nfollow-ups (by forking the stored session, since dsh-acp does not\nimplement `session/load` yet).\n\nThe first spawn bootstraps a dedicated `acp` dsh profile\n(`dsh plugin --profile acp add @deepseek-ai/dsh-acp`), which can take a\nminute; later runs reuse it. Model selection is injected per run through\na `--patch` overlay owned by this executor.",
   "type": "object"
 }
