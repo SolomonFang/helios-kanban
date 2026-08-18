@@ -63,7 +63,8 @@ struct Terminal {
 fn terminal_exit_status(status: std::process::ExitStatus) -> acp::TerminalExitStatus {
     let mut exit_status = acp::TerminalExitStatus::new();
     if let Some(code) = status.code() {
-        exit_status = exit_status.exit_code(code);
+        // Exit codes are non-negative on all supported platforms.
+        exit_status = exit_status.exit_code(code as u32);
     }
     #[cfg(unix)]
     {
@@ -527,11 +528,11 @@ impl acp::Client for AcpClient {
         let (exit_tx, _) = watch::channel(None::<acp::TerminalExitStatus>);
         let (kill_tx, mut kill_rx) = mpsc::unbounded_channel::<()>();
 
-        for stream in [child.stdout.take(), child.stderr.take()]
-            .into_iter()
-            .flatten()
-        {
-            tokio::spawn(drain_terminal_stream(stream, buffer.clone(), byte_limit));
+        if let Some(stdout) = child.stdout.take() {
+            tokio::spawn(drain_terminal_stream(stdout, buffer.clone(), byte_limit));
+        }
+        if let Some(stderr) = child.stderr.take() {
+            tokio::spawn(drain_terminal_stream(stderr, buffer.clone(), byte_limit));
         }
 
         // Reap the child (killing it first if requested) and record its exit
