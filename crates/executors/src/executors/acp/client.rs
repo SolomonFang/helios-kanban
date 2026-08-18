@@ -1,8 +1,12 @@
-use std::sync::Arc;
+use std::{collections::HashMap, process::Stdio, sync::Arc};
 
 use agent_client_protocol::{self as acp};
 use async_trait::async_trait;
-use tokio::sync::{Mutex, mpsc};
+use tokio::{
+    io::AsyncReadExt,
+    process::Command,
+    sync::{Mutex, mpsc, watch},
+};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 use workspace_utils::approvals::{
@@ -19,6 +23,73 @@ use crate::{
 /// `q{n}_opt_*` plus a trailing `reject_once` skip option).
 const ASK_USER_QUESTION_TITLE: &str = "AskUserQuestion";
 
+/// Fallback cap on retained terminal output when the agent does not send
+/// `output_byte_limit`, so a chatty command cannot grow memory unboundedly.
+const DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT: u64 = 1024 * 1024;
+
+/// Accumulated output of a terminal command. Once the byte limit is exceeded
+/// the buffer is truncated from the beginning, as the ACP spec requires.
+#[derive(Default)]
+struct TerminalBuffer {
+    output: Vec<u8>,
+    truncated: bool,
+}
+
+impl TerminalBuffer {
+    fn push(&mut self, chunk: &[u8], byte_limit: u64) {
+        self.output.extend_from_slice(chunk);
+        let limit = byte_limit as usize;
+        if self.output.len() > limit {
+            // Truncate on a UTF-8 character boundary: skip leading
+            // continuation bytes of a multi-byte character.
+            let mut start = self.output.len() - limit;
+            while start < self.output.len() && (self.output[start] & 0b1100_0000) == 0b1000_0000 {
+                start += 1;
+            }
+            self.output.drain(..start);
+            self.truncated = true;
+        }
+    }
+}
+
+/// A terminal spawned on behalf of the agent via `terminal/create`.
+struct Terminal {
+    buffer: Arc<Mutex<TerminalBuffer>>,
+    exit_tx: watch::Sender<Option<acp::TerminalExitStatus>>,
+    kill_tx: mpsc::UnboundedSender<()>,
+}
+
+/// Convert a process exit status into the ACP wire shape.
+fn terminal_exit_status(status: std::process::ExitStatus) -> acp::TerminalExitStatus {
+    let mut exit_status = acp::TerminalExitStatus::new();
+    if let Some(code) = status.code() {
+        exit_status = exit_status.exit_code(code);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            exit_status = exit_status.signal(signal.to_string());
+        }
+    }
+    exit_status
+}
+
+/// Drain a child output stream into the shared terminal buffer.
+async fn drain_terminal_stream<R: tokio::io::AsyncRead + Unpin>(
+    mut stream: R,
+    buffer: Arc<Mutex<TerminalBuffer>>,
+    byte_limit: u64,
+) {
+    let mut chunk = [0u8; 8192];
+    loop {
+        match stream.read(&mut chunk).await {
+            Ok(0) | Err(_) => break,
+            Ok(n) => buffer.lock().await.push(&chunk[..n], byte_limit),
+        }
+    }
+}
+
 /// ACP client that handles agent-client protocol communication
 #[derive(Clone)]
 pub struct AcpClient {
@@ -26,6 +97,7 @@ pub struct AcpClient {
     approvals: Option<Arc<dyn ExecutorApprovalService>>,
     feedback_queue: Arc<Mutex<Vec<String>>>,
     cancel: CancellationToken,
+    terminals: Arc<Mutex<HashMap<String, Terminal>>>,
 }
 
 impl AcpClient {
@@ -40,6 +112,7 @@ impl AcpClient {
             approvals,
             feedback_queue: Arc::new(Mutex::new(Vec::new())),
             cancel,
+            terminals: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -421,40 +494,148 @@ impl acp::Client for AcpClient {
         Err(acp::Error::method_not_found())
     }
 
-    // Terminal operations - not implemented
+    // Terminal operations: spawn local commands on behalf of the agent and
+    // track their output and exit status. Advertised via the `terminal`
+    // client capability at initialize time.
     async fn create_terminal(
         &self,
-        _args: acp::CreateTerminalRequest,
+        args: acp::CreateTerminalRequest,
     ) -> Result<acp::CreateTerminalResponse, acp::Error> {
-        Err(acp::Error::method_not_found())
+        let byte_limit = args
+            .output_byte_limit
+            .unwrap_or(DEFAULT_TERMINAL_OUTPUT_BYTE_LIMIT);
+
+        let mut command = Command::new(&args.command);
+        command
+            .args(&args.args)
+            .kill_on_drop(true)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(cwd) = &args.cwd {
+            command.current_dir(cwd);
+        }
+        for var in &args.env {
+            command.env(&var.name, &var.value);
+        }
+
+        let mut child = command.spawn().map_err(|err| {
+            acp::Error::internal_error().data(format!("failed to spawn `{}`: {err}", args.command))
+        })?;
+
+        let buffer = Arc::new(Mutex::new(TerminalBuffer::default()));
+        let (exit_tx, _) = watch::channel(None::<acp::TerminalExitStatus>);
+        let (kill_tx, mut kill_rx) = mpsc::unbounded_channel::<()>();
+
+        for stream in [child.stdout.take(), child.stderr.take()]
+            .into_iter()
+            .flatten()
+        {
+            tokio::spawn(drain_terminal_stream(stream, buffer.clone(), byte_limit));
+        }
+
+        // Reap the child (killing it first if requested) and record its exit
+        // status so `terminal/output` and `terminal/wait_for_exit` can see it.
+        let exit_status_tx = exit_tx.clone();
+        tokio::spawn(async move {
+            let exited = tokio::select! {
+                _ = kill_rx.recv() => None,
+                status = child.wait() => Some(status),
+            };
+            let status = match exited {
+                Some(status) => status,
+                None => {
+                    let _ = child.start_kill();
+                    child.wait().await
+                }
+            };
+            let exit_status = status.map(terminal_exit_status).unwrap_or_else(|err| {
+                warn!("failed to wait on ACP terminal command: {err}");
+                acp::TerminalExitStatus::new()
+            });
+            let _ = exit_status_tx.send(Some(exit_status));
+        });
+
+        let terminal_id = format!("term-{}", uuid::Uuid::new_v4());
+        self.terminals.lock().await.insert(
+            terminal_id.clone(),
+            Terminal {
+                buffer,
+                exit_tx,
+                kill_tx,
+            },
+        );
+
+        Ok(acp::CreateTerminalResponse::new(terminal_id))
     }
 
     async fn terminal_output(
         &self,
-        _args: acp::TerminalOutputRequest,
+        args: acp::TerminalOutputRequest,
     ) -> Result<acp::TerminalOutputResponse, acp::Error> {
-        Err(acp::Error::method_not_found())
+        let terminals = self.terminals.lock().await;
+        let terminal = terminals
+            .get(args.terminal_id.0.as_ref())
+            .ok_or_else(|| acp::Error::invalid_params().data("unknown terminal id"))?;
+
+        let buffer = terminal.buffer.lock().await;
+        let mut response = acp::TerminalOutputResponse::new(
+            String::from_utf8_lossy(&buffer.output).into_owned(),
+            buffer.truncated,
+        );
+        if let Some(exit_status) = terminal.exit_tx.borrow().as_ref().cloned() {
+            response = response.exit_status(exit_status);
+        }
+        Ok(response)
     }
 
     async fn release_terminal(
         &self,
-        _args: acp::ReleaseTerminalRequest,
+        args: acp::ReleaseTerminalRequest,
     ) -> Result<acp::ReleaseTerminalResponse, acp::Error> {
-        Err(acp::Error::method_not_found())
+        // Releasing is idempotent: kill the command if it is still running
+        // and drop the terminal from the registry.
+        if let Some(terminal) = self.terminals.lock().await.remove(args.terminal_id.0.as_ref()) {
+            let _ = terminal.kill_tx.send(());
+        }
+        Ok(acp::ReleaseTerminalResponse::new())
     }
 
     async fn wait_for_terminal_exit(
         &self,
-        _args: acp::WaitForTerminalExitRequest,
+        args: acp::WaitForTerminalExitRequest,
     ) -> Result<acp::WaitForTerminalExitResponse, acp::Error> {
-        Err(acp::Error::method_not_found())
+        let mut exit_rx = {
+            let terminals = self.terminals.lock().await;
+            terminals
+                .get(args.terminal_id.0.as_ref())
+                .ok_or_else(|| acp::Error::invalid_params().data("unknown terminal id"))?
+                .exit_tx
+                .subscribe()
+        };
+
+        let exit_status = exit_rx
+            .wait_for(Option::is_some)
+            .await
+            .map_err(|_| acp::Error::internal_error().data("terminal exited without status"))?
+            .as_ref()
+            .cloned()
+            .unwrap_or_default();
+
+        Ok(acp::WaitForTerminalExitResponse::new(exit_status))
     }
 
     async fn kill_terminal_command(
         &self,
-        _args: acp::KillTerminalCommandRequest,
+        args: acp::KillTerminalCommandRequest,
     ) -> Result<acp::KillTerminalCommandResponse, acp::Error> {
-        Err(acp::Error::method_not_found())
+        let terminals = self.terminals.lock().await;
+        let terminal = terminals
+            .get(args.terminal_id.0.as_ref())
+            .ok_or_else(|| acp::Error::invalid_params().data("unknown terminal id"))?;
+        // Fails silently if the command already exited.
+        let _ = terminal.kill_tx.send(());
+        Ok(acp::KillTerminalCommandResponse::new())
     }
 
     // Extension methods
@@ -553,5 +734,31 @@ mod tests {
     fn format_answer_feedback_keeps_questions_and_labels() {
         let feedback = format_answer_feedback(&[answered("q1", &["x", "y"])]);
         assert!(feedback.contains("q1: x, y"));
+    }
+
+    #[test]
+    fn terminal_buffer_keeps_output_under_limit_untouched() {
+        let mut buffer = TerminalBuffer::default();
+        buffer.push(b"hello", 10);
+        assert!(!buffer.truncated);
+        assert_eq!(buffer.output, b"hello");
+    }
+
+    #[test]
+    fn terminal_buffer_truncates_from_the_front() {
+        let mut buffer = TerminalBuffer::default();
+        buffer.push("héllo wörld".as_bytes(), 5);
+        assert!(buffer.truncated);
+        assert_eq!(String::from_utf8(buffer.output).unwrap(), "örld");
+    }
+
+    #[test]
+    fn terminal_buffer_never_splits_multibyte_chars() {
+        let mut buffer = TerminalBuffer::default();
+        // "é" is two bytes; a 1-byte limit cannot hold it, so it is dropped
+        // entirely rather than split.
+        buffer.push("aé".as_bytes(), 1);
+        assert!(buffer.truncated);
+        assert!(buffer.output.is_empty());
     }
 }

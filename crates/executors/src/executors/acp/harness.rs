@@ -332,9 +332,15 @@ impl AcpAgentHarness {
                             let _ = io_fut.await;
                         });
 
-                        // Initialize
+                        // Initialize, advertising the terminal capability so
+                        // the agent can run commands via `terminal/*` methods.
                         let _ = conn
-                            .initialize(proto::InitializeRequest::new(proto::ProtocolVersion::V1))
+                            .initialize(
+                                proto::InitializeRequest::new(proto::ProtocolVersion::V1)
+                                    .client_capabilities(
+                                        proto::ClientCapabilities::new().terminal(true),
+                                    ),
+                            )
                             .await;
 
                         // Handle session creation/forking
