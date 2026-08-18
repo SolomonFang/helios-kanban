@@ -596,7 +596,12 @@ impl acp::Client for AcpClient {
     ) -> Result<acp::ReleaseTerminalResponse, acp::Error> {
         // Releasing is idempotent: kill the command if it is still running
         // and drop the terminal from the registry.
-        if let Some(terminal) = self.terminals.lock().await.remove(args.terminal_id.0.as_ref()) {
+        if let Some(terminal) = self
+            .terminals
+            .lock()
+            .await
+            .remove(args.terminal_id.0.as_ref())
+        {
             let _ = terminal.kill_tx.send(());
         }
         Ok(acp::ReleaseTerminalResponse::new())
