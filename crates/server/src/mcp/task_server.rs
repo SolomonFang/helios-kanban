@@ -4,7 +4,7 @@ use db::models::{
     project::Project,
     repo::Repo,
     tag::Tag,
-    task::{CreateTask, Task, TaskPriority, TaskStatus, TaskWithAttemptStatus, UpdateTask},
+    task::{CreateTask, Task, TaskPriority, TaskStatus, TaskType, TaskWithAttemptStatus, UpdateTask},
     workspace::{Workspace, WorkspaceContext},
 };
 use executors::{executors::BaseCodingAgent, profile::ExecutorProfileId};
@@ -46,6 +46,10 @@ pub struct CreateTaskRequest {
         description = "Optional priority: 'urgent', 'high', 'medium', 'low'. Omit to use 'medium'."
     )]
     pub priority: Option<String>,
+    #[schemars(
+        description = "Optional task type (conventional commit prefix used in the merge commit message): 'feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore'. Omit to use 'feat'."
+    )]
+    pub task_type: Option<String>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -205,6 +209,10 @@ pub struct ListTasksRequest {
     pub status: Option<String>,
     #[schemars(description = "Optional priority filter: 'urgent', 'high', 'medium', 'low'")]
     pub priority: Option<String>,
+    #[schemars(
+        description = "Optional task type filter: 'feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore'"
+    )]
+    pub task_type: Option<String>,
     #[schemars(description = "Optional iteration code filter (e.g. '260717')")]
     pub iteration: Option<String>,
     #[schemars(description = "Optional case-insensitive search in title/description")]
@@ -223,6 +231,8 @@ pub struct TaskSummary {
     pub status: String,
     #[schemars(description = "Current priority of the task")]
     pub priority: String,
+    #[schemars(description = "Current task type (merge commit prefix) of the task")]
+    pub task_type: String,
     #[schemars(description = "Iteration code assigned to the task, if any")]
     pub iteration: Option<String>,
     #[schemars(description = "When the task was created")]
@@ -242,6 +252,7 @@ impl TaskSummary {
             title: task.title.to_string(),
             status: task.status.to_string(),
             priority: task.priority.to_string(),
+            task_type: task.task_type.to_string(),
             iteration: task.iteration.clone(),
             created_at: task.created_at.to_rfc3339(),
             updated_at: task.updated_at.to_rfc3339(),
@@ -263,6 +274,8 @@ pub struct TaskDetails {
     pub status: String,
     #[schemars(description = "Current priority of the task")]
     pub priority: String,
+    #[schemars(description = "Current task type (merge commit prefix) of the task")]
+    pub task_type: String,
     #[schemars(description = "Iteration code assigned to the task, if any")]
     pub iteration: Option<String>,
     #[schemars(description = "When the task was created")]
@@ -283,6 +296,7 @@ impl TaskDetails {
             description: task.description,
             status: task.status.to_string(),
             priority: task.priority.to_string(),
+            task_type: task.task_type.to_string(),
             iteration: task.iteration,
             created_at: task.created_at.to_rfc3339(),
             updated_at: task.updated_at.to_rfc3339(),
@@ -304,6 +318,7 @@ pub struct ListTasksResponse {
 pub struct ListTasksFilters {
     pub status: Option<String>,
     pub priority: Option<String>,
+    pub task_type: Option<String>,
     pub iteration: Option<String>,
     pub query: Option<String>,
     pub limit: i32,
@@ -321,6 +336,10 @@ pub struct UpdateTaskRequest {
     pub status: Option<String>,
     #[schemars(description = "New priority: 'urgent', 'high', 'medium', 'low'")]
     pub priority: Option<String>,
+    #[schemars(
+        description = "New task type (merge commit prefix): 'feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore'"
+    )]
+    pub task_type: Option<String>,
     #[schemars(
         description = "New iteration code (e.g. '260717'). Pass empty string to clear. Omit to keep existing."
     )]
@@ -512,6 +531,10 @@ pub struct CreateTaskAndStartRequest {
         description = "Optional priority: 'urgent', 'high', 'medium', 'low'. Omit to use 'medium'."
     )]
     pub priority: Option<String>,
+    #[schemars(
+        description = "Optional task type (conventional commit prefix used in the merge commit message): 'feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore'. Omit to use 'feat'."
+    )]
+    pub task_type: Option<String>,
     #[schemars(
         description = "Optional coding agent executor. Omit to use Settings default from /api/info → config.executor_profile."
     )]
@@ -1142,7 +1165,7 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Create a new task/ticket in a project. Always pass the `project_id` of the project you want to create the task in - it is required! Optionally pass `iteration` (e.g. '260717') to assign the task to an iteration, and `priority` ('urgent', 'high', 'medium', 'low')."
+        description = "Create a new task/ticket in a project. Always pass the `project_id` of the project you want to create the task in - it is required! Optionally pass `iteration` (e.g. '260717') to assign the task to an iteration, `priority` ('urgent', 'high', 'medium', 'low'), and `task_type` ('feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore') which prefixes the merge commit message."
     )]
     async fn create_task(
         &self,
@@ -1152,6 +1175,7 @@ impl TaskServer {
             description,
             iteration,
             priority,
+            task_type,
         }): Parameters<CreateTaskRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         // Expand @tagname references in description
@@ -1181,6 +1205,19 @@ impl TaskServer {
             },
             None => None,
         };
+        let task_type = match task_type {
+            Some(ref task_type_str) => match TaskType::from_str(task_type_str) {
+                Ok(t) => Some(t),
+                Err(_) => {
+                    return Self::err(
+                        "Invalid task_type. Valid values: 'feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore'"
+                            .to_string(),
+                        Some(task_type_str.to_string()),
+                    );
+                }
+            },
+            None => None,
+        };
 
         let url = self.url("/api/tasks");
 
@@ -1188,6 +1225,7 @@ impl TaskServer {
             CreateTask::from_title_description(project_id, title, expanded_description);
         create.iteration = iteration;
         create.priority = priority;
+        create.task_type = task_type;
 
         let task: Task = match self.send_json(self.client.post(&url).json(&create)).await {
             Ok(t) => t,
@@ -1414,6 +1452,7 @@ impl TaskServer {
             project_id,
             status,
             priority,
+            task_type,
             iteration,
             query,
             limit,
@@ -1440,6 +1479,20 @@ impl TaskServer {
                         "Invalid priority filter. Valid values: 'urgent', 'high', 'medium', 'low'"
                             .to_string(),
                         Some(priority_str.to_string()),
+                    );
+                }
+            }
+        } else {
+            None
+        };
+        let task_type_filter = if let Some(ref task_type_str) = task_type {
+            match TaskType::from_str(task_type_str) {
+                Ok(t) => Some(t),
+                Err(_) => {
+                    return Self::err(
+                        "Invalid task_type filter. Valid values: 'feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore'"
+                            .to_string(),
+                        Some(task_type_str.to_string()),
                     );
                 }
             }
@@ -1475,6 +1528,11 @@ impl TaskServer {
             {
                 return false;
             }
+            if let Some(ref want) = task_type_filter
+                && &t.task_type != want
+            {
+                return false;
+            }
             if let Some(ref want_it) = iteration_filter
                 && t.iteration.as_deref() != Some(want_it.as_str())
             {
@@ -1507,6 +1565,7 @@ impl TaskServer {
             applied_filters: ListTasksFilters {
                 status: status.clone(),
                 priority: priority.clone(),
+                task_type: task_type.clone(),
                 iteration: iteration_filter,
                 query: query.clone(),
                 limit: task_limit as i32,
@@ -1649,7 +1708,7 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Update an existing task/ticket's title, description, status, priority, or iteration. `task_id` is required. `title`, `description`, `status`, `priority`, and `iteration` are optional."
+        description = "Update an existing task/ticket's title, description, status, priority, task type, or iteration. `task_id` is required. `title`, `description`, `status`, `priority`, `task_type`, and `iteration` are optional."
     )]
     async fn update_task(
         &self,
@@ -1659,6 +1718,7 @@ impl TaskServer {
             description,
             status,
             priority,
+            task_type,
             iteration,
         }): Parameters<UpdateTaskRequest>,
     ) -> Result<CallToolResult, ErrorData> {
@@ -1689,6 +1749,20 @@ impl TaskServer {
         } else {
             None
         };
+        let task_type = if let Some(ref task_type_str) = task_type {
+            match TaskType::from_str(task_type_str) {
+                Ok(t) => Some(t),
+                Err(_) => {
+                    return Self::err(
+                        "Invalid task_type. Valid values: 'feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore'"
+                            .to_string(),
+                        Some(task_type_str.to_string()),
+                    );
+                }
+            }
+        } else {
+            None
+        };
 
         // Expand @tagname references in description
         let expanded_description = match description {
@@ -1701,7 +1775,7 @@ impl TaskServer {
             description: expanded_description,
             status,
             priority,
-            task_type: None,
+            task_type,
             parent_workspace_id: None,
             image_ids: None,
             iteration,
@@ -1953,6 +2027,7 @@ impl TaskServer {
             description,
             iteration,
             priority,
+            task_type,
             executor,
             variant,
             repos,
@@ -1991,10 +2066,24 @@ impl TaskServer {
             },
             None => None,
         };
+        let task_type = match task_type {
+            Some(ref task_type_str) => match TaskType::from_str(task_type_str) {
+                Ok(t) => Some(t),
+                Err(_) => {
+                    return Self::err(
+                        "Invalid task_type. Valid values: 'feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'chore'"
+                            .to_string(),
+                        Some(task_type_str.to_string()),
+                    );
+                }
+            },
+            None => None,
+        };
         let mut create =
             CreateTask::from_title_description(project_id, title, expanded_description);
         create.iteration = iteration;
         create.priority = priority;
+        create.task_type = task_type;
 
         // Same executor/repo resolution as start_workspace_session
         let (base_executor, variant) = match self

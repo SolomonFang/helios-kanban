@@ -134,7 +134,7 @@ Requires `curl` and `jq`. See `scripts/hk.sh --help`.
 
 ## Task types
 
-`feat` | `fix` | `docs` | `style` | `refactor` | `perf` | `test` | `chore` — default `feat` when omitted. The merge (squash) commit message is prefixed with it, e.g. `fix: 修复登录 500 (helios-kanban a1b2c3d4)`. Use `--type` on `tasks create` / `tasks update` / `create-and-start`.
+`feat` | `fix` | `docs` | `style` | `refactor` | `perf` | `test` | `chore` — default `feat` when omitted. The merge (squash) commit message is prefixed with it, e.g. `fix: 修复登录 500 (helios-kanban a1b2c3d4)`. Use `--type` on `tasks create` / `tasks update` / `create-and-start`; MCP tools `create_task` / `update_task` / `create_task_and_start` accept `task_type` likewise.
 
 ## Safety rules
 
