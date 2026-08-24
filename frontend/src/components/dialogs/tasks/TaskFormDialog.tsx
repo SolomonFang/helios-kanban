@@ -48,6 +48,7 @@ import { cn } from '@/lib/utils';
 import type {
   TaskStatus,
   TaskPriority,
+  TaskType,
   ExecutorProfileId,
   ImageResponse,
 } from 'shared/types';
@@ -62,6 +63,7 @@ interface Task {
   description: string | null;
   status: TaskStatus;
   priority: TaskPriority;
+  task_type: TaskType;
   iteration: string | null;
   created_at: string;
   updated_at: string;
@@ -85,6 +87,7 @@ type TaskFormValues = {
   description: string;
   status: TaskStatus;
   priority: TaskPriority;
+  taskType: TaskType;
   executorProfileId: ExecutorProfileId | null;
   repoBranches: RepoBranch[];
   autoStart: boolean;
@@ -143,6 +146,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
           description: props.task.description || '',
           status: props.task.status,
           priority: props.task.priority,
+          taskType: props.task.task_type,
           executorProfileId: baseProfile,
           repoBranches: defaultRepoBranches,
           autoStart: false,
@@ -155,6 +159,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
           description: props.initialTask.description || '',
           status: 'todo',
           priority: props.initialTask.priority,
+          taskType: props.initialTask.task_type,
           executorProfileId: baseProfile,
           repoBranches: defaultRepoBranches,
           autoStart: true,
@@ -169,6 +174,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
           description: '',
           status: 'todo',
           priority: 'medium',
+          taskType: 'feat',
           executorProfileId: baseProfile,
           repoBranches: defaultRepoBranches,
           autoStart: true,
@@ -194,6 +200,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
             description: value.description,
             status: value.status,
             priority: value.priority,
+            task_type: value.taskType,
             parent_workspace_id: null,
             image_ids: images.length > 0 ? images.map((img) => img.id) : null,
             iteration: value.iteration,
@@ -210,6 +217,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
         description: value.description,
         status: null,
         priority: value.priority,
+        task_type: value.taskType,
         parent_workspace_id:
           mode === 'subtask' ? props.parentTaskAttemptId : null,
         image_ids: imageIds,
@@ -551,6 +559,44 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
                           />
                           {t(`taskFormDialog.priorityOptions.${p}`)}
                         </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </form.Field>
+
+          {/* Type selector (always visible) */}
+          <form.Field name="taskType">
+            {(field) => (
+              <div className="space-y-2">
+                <Label htmlFor="task-type" className="text-sm font-medium">
+                  {t('taskFormDialog.typeLabel')}
+                </Label>
+                <Select
+                  value={field.state.value}
+                  onValueChange={(v) => field.handleChange(v as TaskType)}
+                  disabled={isSubmitting}
+                >
+                  <SelectTrigger id="task-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(
+                      [
+                        'feat',
+                        'fix',
+                        'docs',
+                        'style',
+                        'refactor',
+                        'perf',
+                        'test',
+                        'chore',
+                      ] as TaskType[]
+                    ).map((v) => (
+                      <SelectItem key={v} value={v}>
+                        {t(`taskFormDialog.typeOptions.${v}`)}
                       </SelectItem>
                     ))}
                   </SelectContent>

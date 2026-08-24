@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", priority as \"priority!: TaskPriority\", parent_workspace_id as \"parent_workspace_id: Uuid\", iteration, created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks\n               WHERE parent_workspace_id = $1\n               ORDER BY created_at DESC",
+  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", priority as \"priority!: TaskPriority\", task_type as \"task_type!: TaskType\", parent_workspace_id as \"parent_workspace_id: Uuid\", iteration, created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks\n               WHERE parent_workspace_id = $1\n               ORDER BY created_at DESC",
   "describe": {
     "columns": [
       {
@@ -34,23 +34,28 @@
         "type_info": "Text"
       },
       {
-        "name": "parent_workspace_id: Uuid",
+        "name": "task_type!: TaskType",
         "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "parent_workspace_id: Uuid",
+        "ordinal": 7,
         "type_info": "Blob"
       },
       {
         "name": "iteration",
-        "ordinal": 7,
-        "type_info": "Text"
-      },
-      {
-        "name": "created_at!: DateTime<Utc>",
         "ordinal": 8,
         "type_info": "Text"
       },
       {
-        "name": "updated_at!: DateTime<Utc>",
+        "name": "created_at!: DateTime<Utc>",
         "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 10,
         "type_info": "Text"
       }
     ],
@@ -64,11 +69,12 @@
       true,
       false,
       false,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "708ca0ab86a224e92faed6a58476e6a95aaa2c1ccdc2dd10db34127932ccc87c"
+  "hash": "859cc5488fd3b375c0d06500cee721d2b9b146885fd35a278b0131717b6ee56e"
 }

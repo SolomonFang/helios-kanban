@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", priority as \"priority!: TaskPriority\", parent_workspace_id as \"parent_workspace_id: Uuid\", iteration, created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"\n               FROM tasks\n               WHERE rowid = $1",
+  "query": "INSERT INTO tasks (id, project_id, title, description, status, priority, task_type, parent_workspace_id, iteration)\n               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n               RETURNING id as \"id!: Uuid\", project_id as \"project_id!: Uuid\", title, description, status as \"status!: TaskStatus\", priority as \"priority!: TaskPriority\", task_type as \"task_type!: TaskType\", parent_workspace_id as \"parent_workspace_id: Uuid\", iteration, created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"",
   "describe": {
     "columns": [
       {
@@ -34,28 +34,33 @@
         "type_info": "Text"
       },
       {
-        "name": "parent_workspace_id: Uuid",
+        "name": "task_type!: TaskType",
         "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "parent_workspace_id: Uuid",
+        "ordinal": 7,
         "type_info": "Blob"
       },
       {
         "name": "iteration",
-        "ordinal": 7,
-        "type_info": "Text"
-      },
-      {
-        "name": "created_at!: DateTime<Utc>",
         "ordinal": 8,
         "type_info": "Text"
       },
       {
-        "name": "updated_at!: DateTime<Utc>",
+        "name": "created_at!: DateTime<Utc>",
         "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "updated_at!: DateTime<Utc>",
+        "ordinal": 10,
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 9
     },
     "nullable": [
       true,
@@ -64,11 +69,12 @@
       true,
       false,
       false,
+      false,
       true,
       true,
       false,
       false
     ]
   },
-  "hash": "25970cd0bc120786aa4ecb67bb222fb831ef3f8e4bd0159340f132b4dfa27201"
+  "hash": "cbc0eee6c4312dff2e5a91bfd27be0139d4e733e1664c9e92a4551613243eceb"
 }

@@ -654,6 +654,17 @@
       "medium": "Medium",
       "low": "Low"
     },
+    "typeLabel": "Type",
+    "typeOptions": {
+      "feat": "Feat",
+      "fix": "Fix",
+      "docs": "Docs",
+      "style": "Style",
+      "refactor": "Refactor",
+      "perf": "Perf",
+      "test": "Test",
+      "chore": "Chore"
+    },
     "iterationLabel": "Iteration",
     "noIteration": "No iteration",
     "startLabel": "Start",

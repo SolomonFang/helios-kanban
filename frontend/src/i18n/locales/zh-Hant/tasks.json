@@ -577,6 +577,17 @@
       "medium": "中",
       "low": "低"
     },
+    "typeLabel": "類型",
+    "typeOptions": {
+      "feat": "新功能",
+      "fix": "修復",
+      "docs": "文件",
+      "style": "樣式",
+      "refactor": "重構",
+      "perf": "效能",
+      "test": "測試",
+      "chore": "雜務"
+    },
     "iterationLabel": "迭代",
     "noIteration": "無迭代",
     "startLabel": "開始",

@@ -577,6 +577,17 @@
       "medium": "Media",
       "low": "Baja"
     },
+    "typeLabel": "Tipo",
+    "typeOptions": {
+      "feat": "Funcionalidad",
+      "fix": "Corrección",
+      "docs": "Documentación",
+      "style": "Estilo",
+      "refactor": "Refactorización",
+      "perf": "Rendimiento",
+      "test": "Pruebas",
+      "chore": "Mantenimiento"
+    },
     "iterationLabel": "Iteración",
     "noIteration": "Sin iteración",
     "startLabel": "Iniciar",

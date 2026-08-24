@@ -577,6 +577,17 @@
       "medium": "中",
       "low": "低"
     },
+    "typeLabel": "タイプ",
+    "typeOptions": {
+      "feat": "新機能",
+      "fix": "修正",
+      "docs": "ドキュメント",
+      "style": "スタイル",
+      "refactor": "リファクタリング",
+      "perf": "パフォーマンス",
+      "test": "テスト",
+      "chore": "雑務"
+    },
     "iterationLabel": "イテレーション",
     "noIteration": "イテレーションなし",
     "startLabel": "開始",

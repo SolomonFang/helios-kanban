@@ -685,6 +685,7 @@ pub async fn create_workspace_from_pr(
         )),
         status: Some(TaskStatus::InProgress),
         priority: None,
+        task_type: None,
         parent_workspace_id: None,
         image_ids: None,
         iteration: None,
