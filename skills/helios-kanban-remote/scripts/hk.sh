@@ -157,6 +157,19 @@ normalize_priority() {
   esac
 }
 
+# Validate task type value; empty passes through (server defaults to feat).
+normalize_task_type() {
+  local raw
+  raw=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  case "$raw" in
+    feat | fix | docs | style | refactor | perf | test | chore) echo "$raw" ;;
+    *)
+      echo "error: invalid task type '$1' (feat|fix|docs|style|refactor|perf|test|chore)" >&2
+      exit 1
+      ;;
+  esac
+}
+
 # Expand @tagname in text via GET /api/tags (same behavior as MCP create_task).
 expand_tags() {
   local text="$1"
@@ -264,14 +277,14 @@ Commands:
   projects update <project_id> [--name TEXT] [--description TEXT]
   repos [project_id]
   branches <repo_id> [--query TEXT]
-  tasks list [project_id] [--status S] [--priority P] [--iteration CODE] [--query TEXT] [--limit N]
+  tasks list [project_id] [--status S] [--priority P] [--type T] [--iteration CODE] [--query TEXT] [--limit N]
   tasks get <task_id>
-  tasks create [project_id] <title> [--desc TEXT] [--iteration CODE] [--priority P]
-  tasks update <task_id> [--title T] [--status S] [--desc T] [--iteration CODE] [--priority P]
+  tasks create [project_id] <title> [--desc TEXT] [--iteration CODE] [--priority P] [--type T]
+  tasks update <task_id> [--title T] [--status S] [--desc T] [--iteration CODE] [--priority P] [--type T]
   tasks cancel <task_id>
   tasks delete <task_id>
   start <task_id> [--repo ID|ID:branch]... [--executor E] [--variant V] [--branch B]
-  create-and-start [project_id] <title> [--repo ID|ID:branch]... [--executor E] [--variant V] [--branch B] [--desc T] [--iteration CODE] [--priority P]
+  create-and-start [project_id] <title> [--repo ID|ID:branch]... [--executor E] [--variant V] [--branch B] [--desc T] [--iteration CODE] [--priority P] [--type T]
   follow-up <task_id|workspace_id> <prompt...>   # auto-queues if agent running; expands @tags
   status <task_id>
   workspaces [--task TASK_ID]
@@ -287,6 +300,8 @@ Notes:
   --repo may repeat; use ID:branch for per-repo base branch
   --iteration optional → HELIOS_KANBAN_ITERATION when unset
   --priority: urgent | high | medium | low (default: medium)
+  --type: feat | fix | docs | style | refactor | perf | test | chore (default: feat)
+    → merge commit message is prefixed with it, e.g. "feat: <title> (helios-kanban xxxx)"
   @tagname in --desc / follow-up expands via /api/tags
   cancel ≠ delete ≠ stop (see SKILL.md)
 
@@ -434,11 +449,12 @@ cmd_tasks_list() {
     exit 1
   fi
 
-  local status="" iteration="" query="" limit="50" priority=""
+  local status="" iteration="" query="" limit="50" priority="" task_type=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --status) status="$2"; shift 2 ;;
       --priority) priority="$2"; shift 2 ;;
+      --type) task_type="$2"; shift 2 ;;
       --iteration) iteration="$2"; shift 2 ;;
       --query) query="$2"; shift 2 ;;
       --limit) limit="$2"; shift 2 ;;
@@ -455,6 +471,10 @@ cmd_tasks_list() {
     priority=$(normalize_priority "$priority")
     filter="$filter | map(select(.priority == \$priority))"
   fi
+  if [[ -n "$task_type" ]]; then
+    task_type=$(normalize_task_type "$task_type")
+    filter="$filter | map(select(.task_type == \$task_type))"
+  fi
   if [[ -n "$iteration" ]]; then
     filter="$filter | map(select(.iteration == \$iteration))"
   fi
@@ -462,7 +482,7 @@ cmd_tasks_list() {
     filter="$filter | map(select((.title + \" \" + (.description // \"\")) | test(\$query; \"i\")))"
   fi
   echo "$data" | jq --arg status "$status" --arg iteration "$iteration" --arg query "$query" \
-    --arg priority "$priority" \
+    --arg priority "$priority" --arg task_type "$task_type" \
     "$filter | .[0:$limit]"
 }
 
@@ -488,18 +508,22 @@ cmd_tasks_create() {
     exit 1
   fi
 
-  local desc="" iteration="" priority=""
+  local desc="" iteration="" priority="" task_type=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --desc) desc="$2"; shift 2 ;;
       --iteration) iteration="$2"; shift 2 ;;
       --priority) priority="$2"; shift 2 ;;
+      --type) task_type="$2"; shift 2 ;;
       *) echo "unknown arg: $1" >&2; exit 1 ;;
     esac
   done
   iteration=$(resolve_iteration "$iteration")
   if [[ -n "$priority" ]]; then
     priority=$(normalize_priority "$priority")
+  fi
+  if [[ -n "$task_type" ]]; then
+    task_type=$(normalize_task_type "$task_type")
   fi
   if [[ -n "$desc" ]]; then
     desc=$(expand_tags "$desc")
@@ -508,7 +532,7 @@ cmd_tasks_create() {
   local payload task
   payload=$(jq -n \
     --arg pid "$project_id" --arg t "$title" --arg d "$desc" --arg it "$iteration" \
-    --arg p "$priority" \
+    --arg p "$priority" --arg tt "$task_type" \
     '{
       project_id: $pid,
       title: $t,
@@ -516,7 +540,8 @@ cmd_tasks_create() {
     }
     + (if $d == "" then {} else {description: $d} end)
     + (if $it == "" then {} else {iteration: $it} end)
-    + (if $p == "" then {} else {priority: $p} end)')
+    + (if $p == "" then {} else {priority: $p} end)
+    + (if $tt == "" then {} else {task_type: $tt} end)')
   task=$(api POST "/tasks" -d "$payload")
   echo "$task" | jq --arg url "$(task_url "$project_id" "$(echo "$task" | jq -r '.id')")" \
     '. + {url: $url}'
@@ -526,7 +551,7 @@ cmd_tasks_update() {
   require_jq
   local task_id="$1"
   shift
-  local title="" status="" desc="" iteration="" has_iteration=0 priority=""
+  local title="" status="" desc="" iteration="" has_iteration=0 priority="" task_type=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --title) title="$2"; shift 2 ;;
@@ -534,6 +559,7 @@ cmd_tasks_update() {
       --desc) desc="$2"; shift 2 ;;
       --iteration) iteration="$2"; has_iteration=1; shift 2 ;;
       --priority) priority="$2"; shift 2 ;;
+      --type) task_type="$2"; shift 2 ;;
       *) echo "unknown arg: $1" >&2; exit 1 ;;
     esac
   done
@@ -543,6 +569,10 @@ cmd_tasks_update() {
   if [[ -n "$priority" ]]; then
     priority=$(normalize_priority "$priority")
     payload=$(echo "$payload" | jq --arg v "$priority" '. + {priority: $v}')
+  fi
+  if [[ -n "$task_type" ]]; then
+    task_type=$(normalize_task_type "$task_type")
+    payload=$(echo "$payload" | jq --arg v "$task_type" '. + {task_type: $v}')
   fi
   if [[ -n "$desc" ]]; then
     desc=$(expand_tags "$desc")
@@ -632,7 +662,7 @@ cmd_create_and_start() {
     exit 1
   fi
 
-  local executor="" variant="" branch="" desc="" iteration="" priority=""
+  local executor="" variant="" branch="" desc="" iteration="" priority="" task_type=""
   local repo_specs=()
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -643,12 +673,16 @@ cmd_create_and_start() {
       --desc) desc="$2"; shift 2 ;;
       --iteration) iteration="$2"; shift 2 ;;
       --priority) priority="$2"; shift 2 ;;
+      --type) task_type="$2"; shift 2 ;;
       *) echo "unknown arg: $1" >&2; exit 1 ;;
     esac
   done
   iteration=$(resolve_iteration "$iteration")
   if [[ -n "$priority" ]]; then
     priority=$(normalize_priority "$priority")
+  fi
+  if [[ -n "$task_type" ]]; then
+    task_type=$(normalize_task_type "$task_type")
   fi
   if [[ -n "$desc" ]]; then
     desc=$(expand_tags "$desc")
@@ -659,14 +693,15 @@ cmd_create_and_start() {
   local task_obj payload result
   task_obj=$(jq -n \
     --arg pid "$project_id" --arg t "$title" --arg d "$desc" --arg it "$iteration" \
-    --arg p "$priority" \
+    --arg p "$priority" --arg tt "$task_type" \
     '{
       project_id: $pid,
       title: $t
     }
     + (if $d == "" then {} else {description: $d} end)
     + (if $it == "" then {} else {iteration: $it} end)
-    + (if $p == "" then {} else {priority: $p} end)')
+    + (if $p == "" then {} else {priority: $p} end)
+    + (if $tt == "" then {} else {task_type: $tt} end)')
   if [[ -n "$RESOLVED_VARIANT" ]]; then
     payload=$(jq -n \
       --argjson task "$task_obj" --arg ex "$RESOLVED_EXECUTOR" --arg var "$RESOLVED_VARIANT" \
@@ -783,6 +818,7 @@ cmd_status() {
         title: .title,
         status: .status,
         priority: .priority,
+        task_type: .task_type,
         iteration: .iteration,
         description: .description
       },

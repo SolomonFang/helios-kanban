@@ -104,11 +104,14 @@ POST /api/tasks
   "description": "Optional details",
   "status": "todo",
   "priority": "high",
+  "task_type": "fix",
   "iteration": "260717"
 }
 ```
 
 `priority` is optional: `urgent` | `high` | `medium` | `low` (default `medium`).
+
+`task_type` is optional: `feat` | `fix` | `docs` | `style` | `refactor` | `perf` | `test` | `chore` (default `feat`). It prefixes the merge commit message, e.g. `fix: Fix login bug (helios-kanban a1b2c3d4)`.
 
 ## Update task
 
@@ -117,6 +120,7 @@ PUT /api/tasks/{task_id}
 {
   "status": "inprogress",
   "priority": "urgent",
+  "task_type": "fix",
   "title": "New title",
   "description": "Updated desc",
   "iteration": "260717"
@@ -153,6 +157,7 @@ POST /api/tasks/create-and-start
     "title": "Fix login bug",
     "description": "...",
     "priority": "high",
+    "task_type": "fix",
     "iteration": "260717"
   },
   "executor_profile_id": {

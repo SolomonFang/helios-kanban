@@ -70,9 +70,17 @@ $HK tasks list --status todo --query 登录
 **User**: 建个紧急任务修线上 500，修完降到中
 
 ```bash
-$HK tasks create "修复线上 500" --priority urgent
+$HK tasks create "修复线上 500" --priority urgent --type fix
 $HK tasks list --priority urgent
 $HK tasks update "<task_id>" --priority medium
+```
+
+**User**: 类型是干嘛的
+
+```bash
+# --type 对应合并时 git message 前缀：fix: 修复线上 500 (helios-kanban xxxx)
+$HK tasks create "首页改版" --type feat
+$HK tasks list --type fix
 ```
 
 ## curl snippets
