@@ -123,6 +123,10 @@ Requires `curl` and `jq`. See `scripts/hk.sh --help`.
 | Reasonix | `REASONIX` |
 | Cursor | `CURSOR_AGENT` |
 | Copilot | `COPILOT` |
+| Kimi | `KIMI_CLI` |
+| Qwen | `QWEN_CODE` |
+| OpenCode | `OPENCODE` |
+| Droid | `DROID` |
 
 ## Task statuses
 

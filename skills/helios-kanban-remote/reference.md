@@ -30,6 +30,7 @@ Read `.data` on success; read `.message` on failure.
 | DELETE | `/tasks/{task_id}` | Delete task |
 | POST | `/tasks/create-and-start` | Create task + start agent |
 | POST | `/task-attempts` | Start agent on existing task |
+| GET | `/task-attempts` | List all workspaces (optional `?task_id={uuid}` filter) |
 | GET | `/task-attempts?task_id={uuid}` | List workspaces for task |
 | POST | `/task-attempts/summary` | Workspace summaries (diff/approvals) |
 | POST | `/task-attempts/{workspace_id}/stop` | Stop running agent |

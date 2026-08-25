@@ -49,6 +49,7 @@ Determine agent type and `SKILLS_ROOT`:
 
 | Agent | `SKILLS_ROOT` |
 |-------|---------------|
+| Kimi Code | `$HOME/.agents/skills` |
 | Cursor (global) | `$HOME/.cursor/skills` |
 | Claude Code | `$HOME/.claude/skills` |
 | Cursor (project) | `<workspace>/.cursor/skills` |
@@ -144,7 +145,7 @@ export HELIOS_KANBAN_URL="<user-provided-url>"
 # export HELIOS_KANBAN_ITERATION="260717"
 ```
 
-Persist (skip if already in profile):
+Persist (skip if already in profile). **Ask the user first** before modifying their shell profile — if they decline, keep the vars session-only:
 
 ```bash
 PROFILE="$HOME/.zshrc"
@@ -233,6 +234,8 @@ cd "$REPO_DIR" && git pull origin hly-dev   # if local clone exists
 ```bash
 rm -rf "$SKILL_DIR"
 ```
+
+Also remove any `HELIOS_KANBAN_*` exports previously appended to the shell profile (`~/.zshrc` / `~/.bashrc`).
 
 ---
 
