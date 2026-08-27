@@ -155,20 +155,9 @@ export function NoServerContent({
               {t('preview.noServer.companionPrompt')}
             </p>
             <div className="space-y-2">
-              <Button
-                size="sm"
-                onClick={handleInstallCompanion}
-                disabled={!project || !config || createAndStart.isPending}
-                className="gap-1"
-                variant="outline"
-              >
-                {createAndStart.isPending
-                  ? 'Creating task…'
-                  : 'Install companion automatically'}
-              </Button>
               <div>
                 <a
-                  href="https://github.com/BloopAI/vibe-kanban-web-companion"
+                  href="https://github.com/SolomonFang/helios-kanban-web-companion"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline"
