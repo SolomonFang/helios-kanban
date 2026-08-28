@@ -155,6 +155,17 @@ export function NoServerContent({
               {t('preview.noServer.companionPrompt')}
             </p>
             <div className="space-y-2">
+            <Button
+                size="sm"
+                onClick={handleInstallCompanion}
+                disabled={!project || !config || createAndStart.isPending}
+                className="gap-1"
+                variant="outline"
+              >
+                {createAndStart.isPending
+                  ? 'Creating task…'
+                  : 'Install companion automatically'}
+              </Button>
               <div>
                 <a
                   href="https://github.com/SolomonFang/helios-kanban-web-companion"
