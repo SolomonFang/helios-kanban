@@ -2,6 +2,8 @@ use std::{collections::HashMap, process::Stdio, sync::Arc};
 
 use agent_client_protocol::{self as acp};
 use async_trait::async_trait;
+use serde::Deserialize;
+use serde_json::json;
 use tokio::{
     io::AsyncReadExt,
     process::Command,
@@ -22,6 +24,12 @@ use crate::{
 /// tool through `session/request_permission` (options are namespaced
 /// `q{n}_opt_*` plus a trailing `reject_once` skip option).
 const ASK_USER_QUESTION_TITLE: &str = "AskUserQuestion";
+
+/// ACP method kimi uses for native multi-question forms when the client
+/// advertises the `elicitation.form` capability. Routed to `ext_method` by the
+/// vendored `agent-client-protocol` patch (upstream 0.8 only routes
+/// `_`-prefixed methods there).
+const ELICITATION_CREATE_METHOD: &str = "elicitation/create";
 
 /// Fallback cap on retained terminal output when the agent does not send
 /// `output_byte_limit`, so a chatty command cannot grow memory unboundedly.
@@ -261,6 +269,108 @@ impl AcpClient {
 
         Ok(acp::RequestPermissionResponse::new(outcome))
     }
+
+    /// Handle kimi's native `elicitation/create` form request: surface every
+    /// question through the question-approval flow and translate the answers
+    /// back into the elicitation response shape. Any error returned here makes
+    /// kimi fall back to the single-question request_permission bridge, so
+    /// failures degrade gracefully.
+    async fn handle_elicitation(
+        &self,
+        args: acp::ExtRequest,
+    ) -> Result<acp::ExtResponse, acp::Error> {
+        let params: ElicitationParams = serde_json::from_str(args.params.get()).map_err(|e| {
+            acp::Error::invalid_params().data(format!("invalid elicitation params: {e}"))
+        })?;
+        let questions = parse_elicitation_questions(&params);
+        if questions.is_empty() {
+            return Err(acp::Error::invalid_params().data("elicitation form has no questions"));
+        }
+        let tool_call_id = params.tool_call_id.clone().unwrap_or_default();
+
+        // YOLO (no approval service): never fabricate answers — cancel the
+        // form so the agent decides on its own, mirroring the bridge's skip.
+        let Some(approval_service) = self.approvals.clone() else {
+            self.send_event(AcpEvent::Elicitation {
+                tool_call_id,
+                meta: None,
+            });
+            return elicitation_response(json!({ "action": "cancel" }));
+        };
+
+        let approval_id = match approval_service
+            .create_question_approval(ASK_USER_QUESTION_TITLE, questions.len())
+            .await
+        {
+            Ok(id) => id,
+            Err(ExecutorApprovalError::Cancelled) => {
+                debug!("ACP elicitation cancelled for tool_call_id={tool_call_id}");
+                self.send_event(AcpEvent::Elicitation {
+                    tool_call_id,
+                    meta: None,
+                });
+                return elicitation_response(json!({ "action": "cancel" }));
+            }
+            Err(err) => {
+                tracing::error!(
+                    "ACP elicitation approval failed for tool_call_id={tool_call_id}: {err}"
+                );
+                self.send_event(AcpEvent::Elicitation {
+                    tool_call_id,
+                    meta: None,
+                });
+                return Err(acp::Error::internal_error());
+            }
+        };
+
+        // Link the question approval to the tool call entry so the UI renders
+        // the interactive question banner on it.
+        let requested_at = chrono::Utc::now();
+        let timeout_at = requested_at + chrono::Duration::seconds(APPROVAL_TIMEOUT_SECONDS);
+        self.send_event(AcpEvent::Elicitation {
+            tool_call_id: tool_call_id.clone(),
+            meta: Some(PendingApprovalMeta {
+                approval_id: approval_id.clone(),
+                requested_at,
+                timeout_at,
+            }),
+        });
+
+        let status = match approval_service
+            .wait_question_answer(&approval_id, self.cancel.clone())
+            .await
+        {
+            Ok(s) => s,
+            Err(ExecutorApprovalError::Cancelled) => {
+                debug!("ACP elicitation cancelled for tool_call_id={tool_call_id}");
+                return elicitation_response(json!({ "action": "cancel" }));
+            }
+            Err(err) => {
+                tracing::error!(
+                    "ACP elicitation approval failed for tool_call_id={tool_call_id}: {err}"
+                );
+                return Err(acp::Error::internal_error());
+            }
+        };
+
+        let response = match &status {
+            QuestionStatus::Answered { answers } => json!({
+                "action": "accept",
+                "content": elicitation_content(&questions, answers),
+            }),
+            QuestionStatus::TimedOut => {
+                warn!("Elicitation approval timed out");
+                json!({ "action": "cancel" })
+            }
+        };
+
+        self.send_event(AcpEvent::QuestionResponse(QuestionResponse {
+            tool_call_id,
+            status,
+        }));
+
+        elicitation_response(response)
+    }
 }
 
 /// Find the permission option that dismisses a bridged question (the kimi
@@ -331,6 +441,91 @@ fn format_answer_feedback(header: &str, answers: &[QuestionAnswer]) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     format!("{header}\n{lines}")
+}
+
+/// Params of an `elicitation/create` request as sent by kimi's ACP server
+/// (one form per AskUserQuestion tool call).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ElicitationParams {
+    #[serde(default)]
+    #[allow(dead_code)]
+    session_id: String,
+    #[serde(default)]
+    tool_call_id: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    mode: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    message: String,
+    #[serde(default)]
+    requested_schema: ElicitationSchema,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ElicitationSchema {
+    #[serde(default)]
+    properties: serde_json::Map<String, serde_json::Value>,
+}
+
+/// One question in an elicitation form: its `requestedSchema` property key
+/// (`q{index}`) and whether it expects a multi-select (array) answer.
+#[derive(Debug, PartialEq)]
+struct ElicitationQuestion {
+    key: String,
+    multi: bool,
+}
+
+/// Extract the questions from elicitation params, ordered by their numeric
+/// `q{index}` suffix so answers map back to the right property.
+fn parse_elicitation_questions(params: &ElicitationParams) -> Vec<ElicitationQuestion> {
+    let mut questions: Vec<ElicitationQuestion> = params
+        .requested_schema
+        .properties
+        .iter()
+        .map(|(key, schema)| ElicitationQuestion {
+            key: key.clone(),
+            multi: schema.get("type").and_then(|t| t.as_str()) == Some("array"),
+        })
+        .collect();
+    questions.sort_by_key(|q| {
+        q.key
+            .strip_prefix('q')
+            .and_then(|n| n.parse::<u32>().ok())
+            .unwrap_or(u32::MAX)
+    });
+    questions
+}
+
+/// Map question answers (ordered like the form's questions) to the
+/// elicitation `content` object: `{key: "label"}` for single-select and
+/// `{key: ["label", ...]}` for multi-select.
+fn elicitation_content(
+    questions: &[ElicitationQuestion],
+    answers: &[QuestionAnswer],
+) -> serde_json::Value {
+    let mut content = serde_json::Map::new();
+    for (question, qa) in questions.iter().zip(answers.iter()) {
+        let value = if question.multi {
+            json!(qa.answer)
+        } else {
+            qa.answer
+                .first()
+                .map(|label| json!(label))
+                .unwrap_or(serde_json::Value::Null)
+        };
+        content.insert(question.key.clone(), value);
+    }
+    serde_json::Value::Object(content)
+}
+
+/// Build an `ExtResponse` carrying the elicitation result JSON verbatim.
+fn elicitation_response(value: serde_json::Value) -> Result<acp::ExtResponse, acp::Error> {
+    let raw = serde_json::value::to_raw_value(&value)
+        .map_err(|e| acp::Error::internal_error().data(format!("elicitation response: {e}")))?;
+    Ok(acp::ExtResponse::new(Arc::from(raw)))
 }
 
 #[async_trait(?Send)]
@@ -673,7 +868,12 @@ impl acp::Client for AcpClient {
     }
 
     // Extension methods
-    async fn ext_method(&self, _args: acp::ExtRequest) -> Result<acp::ExtResponse, acp::Error> {
+    async fn ext_method(&self, args: acp::ExtRequest) -> Result<acp::ExtResponse, acp::Error> {
+        // Routed here by the vendored crate patch: kimi's native
+        // multi-question form channel.
+        if args.method.as_ref() == ELICITATION_CREATE_METHOD {
+            return self.handle_elicitation(args).await;
+        }
         Err(acp::Error::method_not_found())
     }
 
@@ -761,6 +961,80 @@ mod tests {
         assert_eq!(additional.len(), 1);
         assert_eq!(additional[0].answer, vec!["方案 B".to_string()]);
         assert!(custom.is_empty());
+    }
+
+    /// Mirrors the kimi ACP elicitation form: one `q{index}` property per
+    /// question; string+oneOf for single-select, array+items.anyOf for multi.
+    fn elicitation_params_json() -> &'static str {
+        r#"{
+            "sessionId": "s1",
+            "toolCallId": "0:ask_1",
+            "mode": "form",
+            "message": "按哪个方案改?\n选哪些模块?",
+            "requestedSchema": {
+                "type": "object",
+                "properties": {
+                    "q1": {
+                        "type": "array",
+                        "title": "模块",
+                        "minItems": 1,
+                        "items": { "anyOf": [{ "const": "api" }, { "const": "ui" }] }
+                    },
+                    "q0": {
+                        "type": "string",
+                        "title": "方案",
+                        "oneOf": [{ "const": "方案 A" }, { "const": "方案 B" }]
+                    }
+                },
+                "required": ["q0", "q1"]
+            }
+        }"#
+    }
+
+    #[test]
+    fn elicitation_params_parse_and_order_questions_by_index() {
+        let params: ElicitationParams = serde_json::from_str(elicitation_params_json()).unwrap();
+        assert_eq!(params.tool_call_id.as_deref(), Some("0:ask_1"));
+        let questions = parse_elicitation_questions(&params);
+        assert_eq!(
+            questions,
+            vec![
+                ElicitationQuestion {
+                    key: "q0".to_string(),
+                    multi: false,
+                },
+                ElicitationQuestion {
+                    key: "q1".to_string(),
+                    multi: true,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn elicitation_params_without_questions_yield_empty_list() {
+        let params: ElicitationParams = serde_json::from_str(r#"{"sessionId": "s1"}"#).unwrap();
+        assert!(parse_elicitation_questions(&params).is_empty());
+    }
+
+    #[test]
+    fn elicitation_content_maps_single_and_multi_answers() {
+        let params: ElicitationParams = serde_json::from_str(elicitation_params_json()).unwrap();
+        let questions = parse_elicitation_questions(&params);
+        let answers = vec![
+            answered("按哪个方案改?", &["方案 B"]),
+            answered("选哪些模块?", &["api", "ui"]),
+        ];
+        let content = elicitation_content(&questions, &answers);
+        assert_eq!(content["q0"], json!("方案 B"));
+        assert_eq!(content["q1"], json!(["api", "ui"]));
+    }
+
+    #[test]
+    fn elicitation_response_serializes_verbatim() {
+        let response = elicitation_response(json!({ "action": "cancel" })).unwrap();
+        let value: serde_json::Value = serde_json::from_str(response.0.get()).unwrap();
+        assert_eq!(value, json!({ "action": "cancel" }));
     }
 
     #[test]

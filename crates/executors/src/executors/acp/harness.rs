@@ -333,13 +333,21 @@ impl AcpAgentHarness {
                         });
 
                         // Initialize, advertising the terminal capability so
-                        // the agent can run commands via `terminal/*` methods.
+                        // the agent can run commands via `terminal/*` methods,
+                        // and the elicitation form capability so agents that
+                        // support it (kimi) ask multi-question prompts via the
+                        // native `elicitation/create` form instead of the
+                        // single-question request_permission bridge.
+                        let mut capabilities = proto::ClientCapabilities::new().terminal(true);
+                        capabilities.elicitation = Some(
+                            [(String::from("form"), serde_json::json!({}))]
+                                .into_iter()
+                                .collect(),
+                        );
                         if let Err(e) = conn
                             .initialize(
                                 proto::InitializeRequest::new(proto::ProtocolVersion::V1)
-                                    .client_capabilities(
-                                        proto::ClientCapabilities::new().terminal(true),
-                                    ),
+                                    .client_capabilities(capabilities),
                             )
                             .await
                         {

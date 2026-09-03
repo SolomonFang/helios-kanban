@@ -35,6 +35,14 @@ pub enum AcpEvent {
     /// Resolution of an AskUserQuestion approval: carries the final question
     /// status so the conversation entry can leave the pending state.
     QuestionResponse(QuestionResponse),
+    /// An `elicitation/create` form request (kimi's native multi-question
+    /// channel). Carries the tool call id the form belongs to plus the
+    /// approval metadata, so the normalizer can mark the matching tool call
+    /// entry as `pending_approval`.
+    Elicitation {
+        tool_call_id: String,
+        meta: Option<PendingApprovalMeta>,
+    },
     Error(String),
     Done(String),
     Other(agent_client_protocol::SessionNotification),

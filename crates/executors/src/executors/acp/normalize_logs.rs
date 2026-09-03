@@ -318,6 +318,30 @@ pub fn normalize_logs(msg_store: Arc<MsgStore>, worktree_path: &Path) {
                                 .push_patch(ConversationPatch::add_normalized_entry(idx, entry));
                         }
                     }
+                    AcpEvent::Elicitation { tool_call_id, meta } => {
+                        // kimi's native question form: mark the matching tool
+                        // call entry as pending_approval. The tool call itself
+                        // arrives via the regular ToolCall/ToolUpdate events.
+                        if let Some(meta) = meta {
+                            if let Some(tool_data) = tool_states.get_mut(&tool_call_id) {
+                                tool_data.status_override =
+                                    Some(LogToolStatus::PendingApproval {
+                                        approval_id: meta.approval_id,
+                                        requested_at: meta.requested_at,
+                                        timeout_at: meta.timeout_at,
+                                    });
+                                let entry = build_tool_entry(tool_data);
+                                msg_store.push_patch(ConversationPatch::replace(
+                                    tool_data.index,
+                                    entry,
+                                ));
+                            } else {
+                                tracing::debug!(
+                                    "Elicitation for unknown tool call {tool_call_id}"
+                                );
+                            }
+                        }
+                    }
                     AcpEvent::User(_) | AcpEvent::Other(_) => (),
                 }
             }
@@ -947,6 +971,27 @@ mod tests {
             patches
                 .iter()
                 .any(|p| p.contains("\"status\":\"pending_approval\"") && p.contains("ap-1")),
+            "expected a patch marking the tool call pending_approval, got: {patches:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn elicitation_marks_tool_call_pending_approval() {
+        let msg_store = Arc::new(MsgStore::new());
+        normalize_logs(msg_store.clone(), Path::new("/tmp"));
+
+        msg_store.push_stdout(QUESTION_TOOL_CALL_LINE.to_string());
+        msg_store.push_stdout(
+            "{\"Elicitation\":{\"tool_call_id\":\"0:ask_1\",\"meta\":{\"approval_id\":\"ap-e1\",\"requested_at\":\"2026-07-18T01:00:00Z\",\"timeout_at\":\"2026-07-18T11:00:00Z\"}}}\n"
+                .to_string(),
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let patches = patch_payloads(&msg_store);
+        assert!(
+            patches
+                .iter()
+                .any(|p| p.contains("\"status\":\"pending_approval\"") && p.contains("ap-e1")),
             "expected a patch marking the tool call pending_approval, got: {patches:?}"
         );
     }
