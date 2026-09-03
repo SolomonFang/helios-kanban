@@ -56,7 +56,7 @@ fn base_command(claude_code_router: bool, native_binary: bool) -> &'static str {
     if claude_code_router {
         "npx -y @musistudio/claude-code-router@1.0.73 code"
     } else if native_binary {
-        "npx -y @anthropic-ai/claude-code@2.1.150"
+        "claude"
     } else {
         "npx -y @anthropic-ai/claude-code@2.1.150"
     }
@@ -719,7 +719,7 @@ impl ClaudeLogProcessor {
                     timestamp: None,
                     entry_type: NormalizedEntryType::ErrorMessage { error_type: NormalizedEntryError::Other,
                     },
-                    content: "Claude Code + ANTHROPIC_API_KEY detected. Usage will be billed via Anthropic pay-as-you-go instead of your Claude subscription. If this is unintended, please select the `disable_api_key` checkbox in the conding-agent-configurations settings page.".to_string(),
+                    content: "Claude Code + ANTHROPIC_API_KEY detected. Usage will be billed via Anthropic pay-as-you-go instead of your Claude subscription. If this is unintended, please select the `disable_api_key` checkbox in the coding-agent-configurations settings page.".to_string(),
                     metadata: None,
                 })
             }
@@ -3087,7 +3087,7 @@ mod tests {
         ));
         assert_eq!(
             entries[0].content,
-            "Claude Code + ANTHROPIC_API_KEY detected. Usage will be billed via Anthropic pay-as-you-go instead of your Claude subscription. If this is unintended, please select the `disable_api_key` checkbox in the conding-agent-configurations settings page."
+            "Claude Code + ANTHROPIC_API_KEY detected. Usage will be billed via Anthropic pay-as-you-go instead of your Claude subscription. If this is unintended, please select the `disable_api_key` checkbox in the coding-agent-configurations settings page."
         );
 
         // Test with managed API key source - should not generate warning

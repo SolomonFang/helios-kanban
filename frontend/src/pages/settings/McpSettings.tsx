@@ -26,11 +26,12 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { JSONEditor } from '@/components/ui/json-editor';
 import { Loader2 } from 'lucide-react';
-import type { BaseCodingAgent, ExecutorConfig } from 'shared/types';
+import type { BaseCodingAgent } from 'shared/types';
 import { McpConfig } from 'shared/types';
 import { useUserSystem } from '@/components/ConfigProvider';
 import { mcpServersApi } from '@/lib/api';
 import { McpConfigStrategyGeneral } from '@/lib/mcpStrategies';
+import { getAgentName } from '@/components/agents/AgentIcon';
 
 export function McpSettings() {
   const { t } = useTranslation('settings');
@@ -39,30 +40,32 @@ export function McpSettings() {
   const [mcpConfig, setMcpConfig] = useState<McpConfig | null>(null);
   const [mcpError, setMcpError] = useState<string | null>(null);
   const [mcpLoading, setMcpLoading] = useState(true);
-  const [selectedProfile, setSelectedProfile] = useState<ExecutorConfig | null>(
-    null
-  );
+  const [selectedProfileKey, setSelectedProfileKey] =
+    useState<BaseCodingAgent | null>(null);
   const [mcpApplying, setMcpApplying] = useState(false);
   const [mcpConfigPath, setMcpConfigPath] = useState<string>('');
   const [success, setSuccess] = useState(false);
 
   // Initialize selected profile when config loads
   useEffect(() => {
-    if (config?.executor_profile && profiles && !selectedProfile) {
-      // Find the current profile
-      const currentProfile = profiles[config.executor_profile.executor];
-      if (currentProfile) {
-        setSelectedProfile(currentProfile);
-      } else if (Object.keys(profiles).length > 0) {
+    if (profiles && !selectedProfileKey) {
+      // Prefer the executor from the user's config
+      const currentKey = config?.executor_profile?.executor;
+      if (currentKey && profiles[currentKey]) {
+        setSelectedProfileKey(currentKey);
+      } else {
         // Default to first profile if current profile not found
-        setSelectedProfile(Object.values(profiles)[0]);
+        const firstKey = Object.keys(profiles).sort()[0];
+        if (firstKey) {
+          setSelectedProfileKey(firstKey as BaseCodingAgent);
+        }
       }
     }
-  }, [config?.executor_profile, profiles, selectedProfile]);
+  }, [config?.executor_profile, profiles, selectedProfileKey]);
 
   // Load existing MCP configuration when selected profile changes
   useEffect(() => {
-    const loadMcpServersForProfile = async (profile: ExecutorConfig) => {
+    const loadMcpServersForProfile = async (executor: BaseCodingAgent) => {
       // Reset state when loading
       setMcpLoading(true);
       setMcpError(null);
@@ -71,17 +74,7 @@ export function McpSettings() {
 
       try {
         // Load MCP servers for the selected profile/agent
-        // Find the key for this profile
-        const profileKey = profiles
-          ? Object.keys(profiles).find((key) => profiles[key] === profile)
-          : null;
-        if (!profileKey) {
-          throw new Error('Profile key not found');
-        }
-
-        const result = await mcpServersApi.load({
-          executor: profileKey as BaseCodingAgent,
-        });
+        const result = await mcpServersApi.load({ executor });
         // Store the McpConfig from backend
         setMcpConfig(result.mcp_config);
         // Create the full configuration structure using the schema
@@ -106,10 +99,10 @@ export function McpSettings() {
     };
 
     // Load MCP servers for the selected profile
-    if (selectedProfile) {
-      loadMcpServersForProfile(selectedProfile);
+    if (selectedProfileKey) {
+      loadMcpServersForProfile(selectedProfileKey);
     }
-  }, [selectedProfile, profiles]);
+  }, [selectedProfileKey]);
 
   const handleMcpServersChange = (value: string) => {
     setMcpServers(value);
@@ -136,7 +129,7 @@ export function McpSettings() {
   };
 
   const handleApplyMcpServers = async () => {
-    if (!selectedProfile || !mcpConfig) return;
+    if (!selectedProfileKey || !mcpConfig) return;
 
     setMcpApplying(true);
     setMcpError(null);
@@ -153,19 +146,9 @@ export function McpSettings() {
               fullConfig
             );
 
-          // Find the key for the selected profile
-          const selectedProfileKey = profiles
-            ? Object.keys(profiles).find(
-                (key) => profiles[key] === selectedProfile
-              )
-            : null;
-          if (!selectedProfileKey) {
-            throw new Error('Selected profile key not found');
-          }
-
           await mcpServersApi.save(
             {
-              executor: selectedProfileKey as BaseCodingAgent,
+              executor: selectedProfileKey,
             },
             { servers: mcpServersConfig }
           );
@@ -270,16 +253,9 @@ export function McpSettings() {
               {t('settings.mcp.labels.agent')}
             </Label>
             <Select
-              value={
-                selectedProfile
-                  ? Object.keys(profiles || {}).find(
-                      (key) => profiles![key] === selectedProfile
-                    ) || ''
-                  : ''
-              }
+              value={selectedProfileKey ?? ''}
               onValueChange={(value: string) => {
-                const profile = profiles?.[value];
-                if (profile) setSelectedProfile(profile);
+                setSelectedProfileKey(value as BaseCodingAgent);
               }}
             >
               <SelectTrigger id="mcp-executor">
@@ -293,7 +269,7 @@ export function McpSettings() {
                     .sort((a, b) => a[0].localeCompare(b[0]))
                     .map(([profileKey]) => (
                       <SelectItem key={profileKey} value={profileKey}>
-                        {profileKey}
+                        {getAgentName(profileKey as BaseCodingAgent)}
                       </SelectItem>
                     ))}
               </SelectContent>

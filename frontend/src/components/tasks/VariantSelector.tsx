@@ -74,8 +74,14 @@ const VariantSelectorInner = forwardRef<HTMLButtonElement, Props>(
           {Object.entries(currentProfile).map(([variantLabel]) => (
             <DropdownMenuItem
               key={variantLabel}
-              onClick={() => onChange(variantLabel)}
-              className={selectedVariant === variantLabel ? 'bg-accent' : ''}
+              onClick={() =>
+                onChange(variantLabel === 'DEFAULT' ? null : variantLabel)
+              }
+              className={
+                (selectedVariant ?? 'DEFAULT') === variantLabel
+                  ? 'bg-accent'
+                  : ''
+              }
             >
               {variantLabel}
             </DropdownMenuItem>

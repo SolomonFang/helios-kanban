@@ -1,5 +1,6 @@
 import type { ExecutorProfileId } from 'shared/types';
 import { cn } from '@/lib/utils';
+import { getAgentName } from '@/components/agents/AgentIcon';
 
 interface ProfileVariantBadgeProps {
   profileVariant: ExecutorProfileId | null;
@@ -16,7 +17,7 @@ export function ProfileVariantBadge({
 
   return (
     <span className={cn('text-xs text-muted-foreground', className)}>
-      {profileVariant.executor}
+      {getAgentName(profileVariant.executor)}
       {profileVariant.variant && (
         <>
           <span className="mx-1">/</span>

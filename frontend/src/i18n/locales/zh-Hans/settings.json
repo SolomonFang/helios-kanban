@@ -317,7 +317,8 @@
         "jsonLabel": "代理配置（JSON）",
         "jsonPlaceholder": "加载配置文件中...",
         "jsonLoading": "加载中...",
-        "pathLabel": "配置文件位置："
+        "pathLabel": "配置文件位置：",
+        "saveConfig": "保存配置"
       },
       "errors": {
         "deleteFailed": "删除配置失败。请重试。",
@@ -336,6 +337,23 @@
       "deleteConfigDialog": {
         "title": "删除配置？",
         "description": "这将从 {{executorType}} 执行器中永久删除\"{{configName}}\"。此操作无法撤销。"
+      },
+      "createConfigDialog": {
+        "title": "新建配置",
+        "description": "为 {{executorType}} 执行器添加新配置。",
+        "nameLabel": "配置名称",
+        "namePlaceholder": "例如：PRODUCTION、DEVELOPMENT",
+        "cloneFromLabel": "克隆自（可选）",
+        "cloneFromPlaceholder": "从空白开始或克隆现有配置",
+        "startBlank": "从空白开始",
+        "cloneFrom": "克隆自 {{name}}",
+        "createButton": "创建配置",
+        "errors": {
+          "empty": "配置名称不能为空",
+          "tooLong": "配置名称不能超过 40 个字符",
+          "invalidChars": "配置名称只能包含字母、数字、下划线和连字符",
+          "exists": "同名配置已存在"
+        }
       }
     },
     "mcp": {
@@ -496,6 +514,20 @@
         "discard": "放弃",
         "confirmSwitch": "您有未保存的更改。您确定要切换仓库吗？您的更改将丢失。"
       }
+    },
+    "onboarding": {
+      "title": "欢迎使用 Helios Kanban",
+      "description": "让我们设置你的编码偏好。之后你可以随时在设置中更改。",
+      "agentSectionTitle": "选择你的编码代理",
+      "defaultAgentLabel": "默认代理",
+      "agentPlaceholder": "选择你偏好的编码代理",
+      "editorSectionTitle": "选择你的代码编辑器",
+      "editorLabel": "首选编辑器",
+      "editorPlaceholder": "选择你偏好的编辑器",
+      "editorHelper": "此编辑器将用于打开任务尝试和项目文件。",
+      "customCommandLabel": "自定义命令",
+      "customCommandPlaceholder": "例如：code、subl、vim",
+      "customCommandHelper": "输入运行自定义编辑器的命令。参数用空格分隔（例如 \"code --wait\"）。"
     }
   },
   "integrations": {

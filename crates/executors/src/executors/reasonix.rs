@@ -111,6 +111,10 @@ impl Reasonix {
             builder = builder.extend_params(["--model", model.as_str()]);
         }
 
+        if self.dangerously_skip_permissions.unwrap_or(false) {
+            builder = builder.extend_params(["--yolo"]);
+        }
+
         apply_overrides(builder, &self.cmd)
     }
 

@@ -93,7 +93,7 @@
       },
       "PLAN": {
         "OPENCODE": {
-          "mode": "plan",
+          "agent": "plan",
           "auto_approve": true
         }
       },

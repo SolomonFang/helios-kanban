@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PlusIcon } from '@phosphor-icons/react';
-import type { BaseCodingAgent, ExecutorConfig } from 'shared/types';
+import type { BaseCodingAgent } from 'shared/types';
 import { McpConfig } from 'shared/types';
 import { useUserSystem } from '@/components/ConfigProvider';
 import { mcpServersApi } from '@/lib/api';
@@ -32,9 +32,8 @@ export function McpSettingsSection() {
   const [mcpConfig, setMcpConfig] = useState<McpConfig | null>(null);
   const [mcpError, setMcpError] = useState<string | null>(null);
   const [mcpLoading, setMcpLoading] = useState(true);
-  const [selectedProfile, setSelectedProfile] = useState<ExecutorConfig | null>(
-    null
-  );
+  const [selectedProfileKey, setSelectedProfileKey] =
+    useState<BaseCodingAgent | null>(null);
   const [mcpApplying, setMcpApplying] = useState(false);
   const [mcpConfigPath, setMcpConfigPath] = useState<string>('');
   const [success, setSuccess] = useState(false);
@@ -49,34 +48,28 @@ export function McpSettingsSection() {
 
   // Initialize selected profile when config loads
   useEffect(() => {
-    if (config?.executor_profile && profiles && !selectedProfile) {
-      const currentProfile = profiles[config.executor_profile.executor];
-      if (currentProfile) {
-        setSelectedProfile(currentProfile);
-      } else if (Object.keys(profiles).length > 0) {
-        setSelectedProfile(Object.values(profiles)[0]);
+    if (profiles && !selectedProfileKey) {
+      const currentKey = config?.executor_profile?.executor;
+      if (currentKey && profiles[currentKey]) {
+        setSelectedProfileKey(currentKey);
+      } else {
+        const firstKey = Object.keys(profiles).sort()[0];
+        if (firstKey) {
+          setSelectedProfileKey(firstKey as BaseCodingAgent);
+        }
       }
     }
-  }, [config?.executor_profile, profiles, selectedProfile]);
+  }, [config?.executor_profile, profiles, selectedProfileKey]);
 
   // Load MCP configuration when selected profile changes
   useEffect(() => {
-    const loadMcpServersForProfile = async (profile: ExecutorConfig) => {
+    const loadMcpServersForProfile = async (executor: BaseCodingAgent) => {
       setMcpLoading(true);
       setMcpError(null);
       setMcpConfigPath('');
 
       try {
-        const profileKey = profiles
-          ? Object.keys(profiles).find((key) => profiles[key] === profile)
-          : null;
-        if (!profileKey) {
-          throw new Error('Profile key not found');
-        }
-
-        const result = await mcpServersApi.load({
-          executor: profileKey as BaseCodingAgent,
-        });
+        const result = await mcpServersApi.load({ executor });
         setMcpConfig(result.mcp_config);
         const fullConfig = McpConfigStrategyGeneral.createFullConfig(
           result.mcp_config
@@ -99,10 +92,10 @@ export function McpSettingsSection() {
       }
     };
 
-    if (selectedProfile) {
-      loadMcpServersForProfile(selectedProfile);
+    if (selectedProfileKey) {
+      loadMcpServersForProfile(selectedProfileKey);
     }
-  }, [selectedProfile, profiles]);
+  }, [selectedProfileKey]);
 
   const handleMcpServersChange = (value: string) => {
     setMcpServers(value);
@@ -127,7 +120,7 @@ export function McpSettingsSection() {
   };
 
   const handleApplyMcpServers = async () => {
-    if (!selectedProfile || !mcpConfig) return;
+    if (!selectedProfileKey || !mcpConfig) return;
 
     setMcpApplying(true);
     setMcpError(null);
@@ -143,18 +136,9 @@ export function McpSettingsSection() {
               fullConfig
             );
 
-          const selectedProfileKey = profiles
-            ? Object.keys(profiles).find(
-                (key) => profiles[key] === selectedProfile
-              )
-            : null;
-          if (!selectedProfileKey) {
-            throw new Error('Selected profile key not found');
-          }
-
           await mcpServersApi.save(
             {
-              executor: selectedProfileKey as BaseCodingAgent,
+              executor: selectedProfileKey,
             },
             { servers: mcpServersConfig }
           );
@@ -229,12 +213,6 @@ export function McpSettingsSection() {
         .map((key) => ({ value: key, label: toPrettyCase(key) }))
     : [];
 
-  const selectedProfileKey = selectedProfile
-    ? Object.keys(profiles || {}).find(
-        (key) => profiles![key] === selectedProfile
-      ) || ''
-    : '';
-
   if (!config) {
     return (
       <div className="py-8">
@@ -285,8 +263,7 @@ export function McpSettingsSection() {
                 <DropdownMenuItem
                   key={option.value}
                   onClick={() => {
-                    const profile = profiles?.[option.value];
-                    if (profile) setSelectedProfile(profile);
+                    setSelectedProfileKey(option.value as BaseCodingAgent);
                   }}
                 >
                   {option.label}

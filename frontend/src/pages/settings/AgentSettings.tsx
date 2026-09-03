@@ -35,6 +35,7 @@ import { CreateConfigurationDialog } from '@/components/dialogs/settings/CreateC
 import { DeleteConfigurationDialog } from '@/components/dialogs/settings/DeleteConfigurationDialog';
 import { useAgentAvailability } from '@/hooks/useAgentAvailability';
 import { AgentAvailabilityIndicator } from '@/components/AgentAvailabilityIndicator';
+import { getAgentName } from '@/components/agents/AgentIcon';
 import type {
   BaseCodingAgent,
   ExecutorConfigs,
@@ -66,12 +67,29 @@ export function AgentSettings() {
   // Form-based editor state
   const [useFormEditor, setUseFormEditor] = useState(true);
   const [selectedExecutorType, setSelectedExecutorType] =
-    useState<BaseCodingAgent>('CLAUDE_CODE' as BaseCodingAgent);
+    useState<BaseCodingAgent | null>(null);
   const [selectedConfiguration, setSelectedConfiguration] =
     useState<string>('DEFAULT');
   const [localParsedProfiles, setLocalParsedProfiles] =
     useState<ExecutorConfigs | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+
+  // Initialize selection from config default, falling back to first executor
+  useEffect(() => {
+    if (selectedExecutorType) return;
+    const configExecutor = config?.executor_profile?.executor;
+    if (configExecutor) {
+      setSelectedExecutorType(configExecutor);
+      setSelectedConfiguration(config?.executor_profile?.variant || 'DEFAULT');
+      return;
+    }
+    if (localParsedProfiles?.executors) {
+      const firstExecutor = Object.keys(localParsedProfiles.executors)[0];
+      if (firstExecutor) {
+        setSelectedExecutorType(firstExecutor as BaseCodingAgent);
+      }
+    }
+  }, [config?.executor_profile, localParsedProfiles, selectedExecutorType]);
 
   // Default executor profile state
   const [executorDraft, setExecutorDraft] = useState<ExecutorProfileId | null>(
@@ -157,6 +175,7 @@ export function AgentSettings() {
 
   // Open create dialog
   const openCreateDialog = async () => {
+    if (!selectedExecutorType) return;
     try {
       const result = await CreateConfigurationDialog.show({
         executorType: selectedExecutorType,
@@ -211,6 +230,7 @@ export function AgentSettings() {
 
   // Open delete dialog
   const openDeleteDialog = async (configName: string) => {
+    if (!selectedExecutorType) return;
     try {
       const result = await DeleteConfigurationDialog.show({
         configName,
@@ -227,7 +247,7 @@ export function AgentSettings() {
 
   // Handle delete configuration
   const handleDeleteConfiguration = async (configToDelete: string) => {
-    if (!localParsedProfiles) {
+    if (!localParsedProfiles || !selectedExecutorType) {
       return;
     }
 
@@ -374,7 +394,12 @@ export function AgentSettings() {
   };
 
   const handleExecutorConfigSave = async (formData: unknown) => {
-    if (!localParsedProfiles || !localParsedProfiles.executors) return;
+    if (
+      !localParsedProfiles ||
+      !localParsedProfiles.executors ||
+      !selectedExecutorType
+    )
+      return;
 
     // Clear any previous errors
     setSaveError(null);
@@ -508,7 +533,7 @@ export function AgentSettings() {
                       .sort((a, b) => a[0].localeCompare(b[0]))
                       .map(([profileKey]) => (
                         <SelectItem key={profileKey} value={profileKey}>
-                          {profileKey}
+                          {getAgentName(profileKey as BaseCodingAgent)}
                         </SelectItem>
                       ))}
                 </SelectContent>
@@ -545,12 +570,16 @@ export function AgentSettings() {
                               onClick={() => {
                                 const newProfile: ExecutorProfileId = {
                                   executor: currentProfileVariant!.executor,
-                                  variant: variantLabel,
+                                  variant:
+                                    variantLabel === 'DEFAULT'
+                                      ? null
+                                      : variantLabel,
                                 };
                                 updateExecutorDraft(newProfile);
                               }}
                               className={
-                                currentProfileVariant?.variant === variantLabel
+                                (currentProfileVariant?.variant ??
+                                  'DEFAULT') === variantLabel
                                   ? 'bg-accent'
                                   : ''
                               }
@@ -618,6 +647,7 @@ export function AgentSettings() {
           </div>
 
           {useFormEditor &&
+          selectedExecutorType &&
           localParsedProfiles &&
           localParsedProfiles.executors ? (
             // Form-based editor
@@ -646,7 +676,7 @@ export function AgentSettings() {
                       {Object.keys(localParsedProfiles.executors).map(
                         (type) => (
                           <SelectItem key={type} value={type}>
-                            {type}
+                            {getAgentName(type as BaseCodingAgent)}
                           </SelectItem>
                         )
                       )}

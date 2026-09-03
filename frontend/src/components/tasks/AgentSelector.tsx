@@ -7,6 +7,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
+import { getAgentName } from '@/components/agents/AgentIcon';
 import type { ExecutorProfileId, BaseCodingAgent } from 'shared/types';
 
 interface AgentSelectorProps {
@@ -51,7 +52,9 @@ export function AgentSelector({
           >
             <div className="flex items-center gap-1.5 w-full">
               <Bot className="h-3 w-3" />
-              <span className="truncate">{selectedAgent || 'Agent'}</span>
+              <span className="truncate">
+                {selectedAgent ? getAgentName(selectedAgent) : 'Agent'}
+              </span>
             </div>
             <ArrowDown className="h-3 w-3" />
           </Button>
@@ -73,7 +76,7 @@ export function AgentSelector({
                 }}
                 className={selectedAgent === agent ? 'bg-accent' : ''}
               >
-                {agent}
+                {getAgentName(agent)}
               </DropdownMenuItem>
             ))
           )}

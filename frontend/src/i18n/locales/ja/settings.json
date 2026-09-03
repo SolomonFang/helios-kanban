@@ -317,7 +317,8 @@
         "jsonLabel": "エージェント設定（JSON）",
         "jsonPlaceholder": "プロファイルを読み込み中...",
         "jsonLoading": "読み込み中...",
-        "pathLabel": "設定ファイルの場所："
+        "pathLabel": "設定ファイルの場所：",
+        "saveConfig": "設定を保存"
       },
       "errors": {
         "deleteFailed": "設定の削除に失敗しました。もう一度お試しください。",
@@ -336,6 +337,23 @@
       "deleteConfigDialog": {
         "title": "設定を削除しますか？",
         "description": "「{{configName}}」を{{executorType}}エグゼキューターから完全に削除します。この操作は元に戻せません。"
+      },
+      "createConfigDialog": {
+        "title": "新しい設定を作成",
+        "description": "{{executorType}} エグゼキューターの新しい設定を追加します。",
+        "nameLabel": "設定名",
+        "namePlaceholder": "例：PRODUCTION, DEVELOPMENT",
+        "cloneFromLabel": "複製元（任意）",
+        "cloneFromPlaceholder": "空の設定から開始、または既存の設定を複製",
+        "startBlank": "空の設定から開始",
+        "cloneFrom": "{{name}} から複製",
+        "createButton": "設定を作成",
+        "errors": {
+          "empty": "設定名は空にできません",
+          "tooLong": "設定名は40文字以内にしてください",
+          "invalidChars": "設定名には英数字、アンダースコア、ハイフンのみ使用できます",
+          "exists": "この名前の設定は既に存在します"
+        }
       }
     },
     "mcp": {
@@ -492,6 +510,20 @@
         "discard": "破棄",
         "confirmSwitch": "未保存の変更があります。本当にリポジトリを切り替えますか？変更は失われます。"
       }
+    },
+    "onboarding": {
+      "title": "Helios Kanban へようこそ",
+      "description": "コーディングの設定を行いましょう。これらは後から設定画面でいつでも変更できます。",
+      "agentSectionTitle": "コーディングエージェントを選択",
+      "defaultAgentLabel": "デフォルトエージェント",
+      "agentPlaceholder": "希望のコーディングエージェントを選択",
+      "editorSectionTitle": "コードエディターを選択",
+      "editorLabel": "優先エディター",
+      "editorPlaceholder": "希望のエディターを選択",
+      "editorHelper": "このエディターはタスクの試行やプロジェクトファイルを開く際に使用されます。",
+      "customCommandLabel": "カスタムコマンド",
+      "customCommandPlaceholder": "例：code, subl, vim",
+      "customCommandHelper": "カスタムエディターを起動するコマンドを入力してください。引数はスペースで区切ります（例：\"code --wait\"）。"
     }
   },
   "integrations": {

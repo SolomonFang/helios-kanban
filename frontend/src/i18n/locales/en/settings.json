@@ -317,7 +317,8 @@
         "jsonLabel": "Agent Configuration (JSON)",
         "jsonPlaceholder": "Loading profiles...",
         "jsonLoading": "Loading...",
-        "pathLabel": "Configuration file location:"
+        "pathLabel": "Configuration file location:",
+        "saveConfig": "Save Configuration"
       },
       "errors": {
         "deleteFailed": "Failed to delete configuration. Please try again.",
@@ -336,6 +337,23 @@
       "deleteConfigDialog": {
         "title": "Delete Configuration?",
         "description": "This will permanently remove \"{{configName}}\" from the {{executorType}} executor. You can't undo this action."
+      },
+      "createConfigDialog": {
+        "title": "Create New Configuration",
+        "description": "Add a new configuration for the {{executorType}} executor.",
+        "nameLabel": "Configuration Name",
+        "namePlaceholder": "e.g., PRODUCTION, DEVELOPMENT",
+        "cloneFromLabel": "Clone from (optional)",
+        "cloneFromPlaceholder": "Start blank or clone existing",
+        "startBlank": "Start blank",
+        "cloneFrom": "Clone from {{name}}",
+        "createButton": "Create Configuration",
+        "errors": {
+          "empty": "Configuration name cannot be empty",
+          "tooLong": "Configuration name must be 40 characters or less",
+          "invalidChars": "Configuration name can only contain letters, numbers, underscores, and hyphens",
+          "exists": "A configuration with this name already exists"
+        }
       }
     },
     "mcp": {
@@ -496,6 +514,20 @@
         "discard": "Discard",
         "confirmSwitch": "You have unsaved changes. Are you sure you want to switch repositories? Your changes will be lost."
       }
+    },
+    "onboarding": {
+      "title": "Welcome to Helios Kanban",
+      "description": "Let's set up your coding preferences. You can always change these later in Settings.",
+      "agentSectionTitle": "Choose Your Coding Agent",
+      "defaultAgentLabel": "Default Agent",
+      "agentPlaceholder": "Select your preferred coding agent",
+      "editorSectionTitle": "Choose Your Code Editor",
+      "editorLabel": "Preferred Editor",
+      "editorPlaceholder": "Select your preferred editor",
+      "editorHelper": "This editor will be used to open task attempts and project files.",
+      "customCommandLabel": "Custom Command",
+      "customCommandPlaceholder": "e.g., code, subl, vim",
+      "customCommandHelper": "Enter the command to run your custom editor. Use spaces for arguments (e.g., \"code --wait\")."
     }
   },
   "integrations": {

@@ -5,7 +5,7 @@ import { GeneralSettingsSectionContent } from './GeneralSettingsSection';
 import { ReposSettingsSectionContent } from './ReposSettingsSection';
 import { OrganizationsSettingsSectionContent } from './OrganizationsSettingsSection';
 import { RemoteProjectsSettingsSectionContent } from './RemoteProjectsSettingsSection';
-import { AgentsSettingsSectionContent } from './AgentsSettingsSection';
+import { AgentsSettingsSection } from './AgentsSettingsSection';
 import { McpSettingsSectionContent } from './McpSettingsSection';
 
 export type SettingsSectionType =
@@ -62,7 +62,7 @@ export function SettingsSection({
           />
         );
       case 'agents':
-        return <AgentsSettingsSectionContent />;
+        return <AgentsSettingsSection />;
       case 'mcp':
         return <McpSettingsSectionContent />;
       default:

@@ -69,7 +69,8 @@ pub struct ExecutorProfileId {
     pub variant: Option<String>,
 }
 
-// Convert legacy profile/executor names from kebab-case to SCREAMING_SNAKE_CASE, can be deleted 14 days from 3/9/25
+// Convert legacy profile/executor names from kebab-case to SCREAMING_SNAKE_CASE.
+// Kept for backwards compatibility with values stored by older versions (e.g. legacy CURSOR naming).
 fn de_base_coding_agent_kebab<'de, D>(de: D) -> Result<BaseCodingAgent, D::Error>
 where
     D: Deserializer<'de>,
@@ -228,12 +229,30 @@ impl ExecutorConfigs {
             Ok(mut user_overrides) => {
                 tracing::info!("Loaded user profile overrides from profiles.json");
                 user_overrides.canonicalise();
-                Self::merge_with_defaults(defaults, user_overrides)
+                Self::merge_with_defaults_validated(defaults, user_overrides)
             }
             Err(e) => {
                 tracing::error!(
                     "Failed to parse user profiles.json: {}, using defaults only",
                     e
+                );
+                defaults
+            }
+        }
+    }
+
+    /// Merge defaults with user overrides, validating the result.
+    /// If the merged configuration is invalid (e.g. a hand-edited profiles.json
+    /// left an executor without a DEFAULT configuration), log a warning and
+    /// fall back to the built-in defaults instead of keeping a config that
+    /// would panic or misbehave at query time.
+    fn merge_with_defaults_validated(defaults: Self, overrides: Self) -> Self {
+        let merged = Self::merge_with_defaults(defaults.clone(), overrides);
+        match Self::validate_merged(&merged) {
+            Ok(()) => merged,
+            Err(e) => {
+                tracing::warn!(
+                    "Merged executor profiles are invalid ({e}), falling back to built-in defaults"
                 );
                 defaults
             }
@@ -356,7 +375,7 @@ impl ExecutorConfigs {
             // Ensure default configuration exists
             let default_config = profile.configurations.get("DEFAULT").ok_or_else(|| {
                 ProfileError::Validation(format!(
-                    "Executor '{executor_key}' is missing required 'default' configuration"
+                    "Executor '{executor_key}' is missing required 'DEFAULT' configuration"
                 ))
             })?;
 
@@ -388,16 +407,16 @@ impl ExecutorConfigs {
     }
 
     pub fn get_coding_agent(&self, executor_profile_id: &ExecutorProfileId) -> Option<CodingAgent> {
+        // Normalise the variant key the same way configuration keys are stored,
+        // so legacy lowercase/kebab-case variants from the DB still resolve.
+        let variant_key = executor_profile_id
+            .variant
+            .as_deref()
+            .map(canonical_variant_key)
+            .unwrap_or_else(|| "DEFAULT".to_string());
         self.executors
             .get(&executor_profile_id.executor)
-            .and_then(|executor| {
-                executor.get_variant(
-                    &executor_profile_id
-                        .variant
-                        .clone()
-                        .unwrap_or("DEFAULT".to_string()),
-                )
-            })
+            .and_then(|executor| executor.get_variant(&variant_key))
             .cloned()
     }
 
@@ -405,12 +424,42 @@ impl ExecutorConfigs {
         &self,
         executor_profile_id: &ExecutorProfileId,
     ) -> CodingAgent {
-        self.get_coding_agent(executor_profile_id)
+        if let Some(agent) = self.get_coding_agent(executor_profile_id) {
+            return agent;
+        }
+
+        if let Some(variant) = &executor_profile_id.variant {
+            tracing::warn!(
+                "Variant '{variant}' not found for executor '{}', falling back to DEFAULT",
+                executor_profile_id.executor
+            );
+        }
+
+        let default_id =
+            ExecutorProfileId::with_variant(executor_profile_id.executor, "DEFAULT".to_string());
+        if let Some(agent) = self.get_coding_agent(&default_id) {
+            return agent;
+        }
+
+        // The loaded profiles are missing a DEFAULT configuration for this
+        // executor (e.g. a hand-edited profiles.json). Recover from the
+        // embedded defaults instead of panicking.
+        tracing::warn!(
+            "No DEFAULT configuration found for executor '{}', falling back to built-in defaults",
+            executor_profile_id.executor
+        );
+        Self::from_defaults()
+            .get_coding_agent(&default_id)
             .unwrap_or_else(|| {
-                let mut default_executor_profile_id = executor_profile_id.clone();
-                default_executor_profile_id.variant = Some("DEFAULT".to_string());
-                self.get_coding_agent(&default_executor_profile_id)
-                    .expect("No default variant found")
+                tracing::warn!(
+                    "Executor '{}' is not in the built-in defaults, falling back to CLAUDE_CODE",
+                    executor_profile_id.executor
+                );
+                Self::from_defaults()
+                    .get_coding_agent(&ExecutorProfileId::new(BaseCodingAgent::ClaudeCode))
+                    .expect(
+                        "Built-in defaults must always contain a CLAUDE_CODE DEFAULT configuration",
+                    )
             })
     }
     pub async fn get_recommended_executor_profile(
@@ -434,7 +483,7 @@ impl ExecutorConfigs {
 
         agents_with_info.sort_by(|a, b| {
             use crate::executors::AvailabilityInfo;
-            match (&a.1, &b.1) {
+            (match (&a.1, &b.1) {
                 // Both have login detected - compare timestamps (most recent first)
                 (
                     AvailabilityInfo::LoginDetected {
@@ -467,7 +516,10 @@ impl ExecutorConfigs {
                 }
                 // Same state - equal
                 _ => std::cmp::Ordering::Equal,
-            }
+            })
+            // Deterministic tie-break: HashMap iteration order is random, so
+            // without this equally-available agents would be recommended at random.
+            .then_with(|| a.0.to_string().cmp(&b.0.to_string()))
         });
 
         let selected = agents_with_info[0].0;
@@ -480,5 +532,140 @@ pub fn to_default_variant(id: &ExecutorProfileId) -> ExecutorProfileId {
     ExecutorProfileId {
         executor: id.executor,
         variant: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn configs_from_json(json: &str) -> ExecutorConfigs {
+        serde_json::from_str(json).expect("test config JSON should parse")
+    }
+
+    #[test]
+    fn get_coding_agent_normalises_variant_key() {
+        let configs = configs_from_json(
+            r#"{"executors":{"CLAUDE_CODE":{
+                "DEFAULT":{"CLAUDE_CODE":{}},
+                "PLAN":{"CLAUDE_CODE":{"plan":true}}
+            }}}"#,
+        );
+
+        // Legacy lowercase / mixed-case variant names must resolve to the
+        // canonical SCREAMING_SNAKE_CASE configuration.
+        for raw in ["plan", "Plan", "PLAN"] {
+            let agent = configs
+                .get_coding_agent(&ExecutorProfileId::with_variant(
+                    BaseCodingAgent::ClaudeCode,
+                    raw.to_string(),
+                ))
+                .unwrap_or_else(|| panic!("variant '{raw}' should resolve"));
+            match agent {
+                CodingAgent::ClaudeCode(claude) => {
+                    assert_eq!(
+                        claude.plan,
+                        Some(true),
+                        "variant '{raw}' should map to PLAN"
+                    )
+                }
+                other => panic!("expected ClaudeCode config, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn missing_variant_falls_back_to_default_config() {
+        let configs = configs_from_json(
+            r#"{"executors":{"CLAUDE_CODE":{
+                "DEFAULT":{"CLAUDE_CODE":{"model":"opus"}}
+            }}}"#,
+        );
+
+        let agent = configs.get_coding_agent_or_default(&ExecutorProfileId::with_variant(
+            BaseCodingAgent::ClaudeCode,
+            "DOES_NOT_EXIST".to_string(),
+        ));
+        match agent {
+            CodingAgent::ClaudeCode(claude) => assert_eq!(claude.model.as_deref(), Some("opus")),
+            other => panic!("expected ClaudeCode DEFAULT config, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn missing_default_config_recovers_from_builtin_defaults() {
+        // A hand-edited profiles.json could leave an executor without a DEFAULT
+        // configuration; querying it must not panic.
+        let configs = configs_from_json(
+            r#"{"executors":{"QWEN_CODE":{
+                "FOO":{"QWEN_CODE":{}}
+            }}}"#,
+        );
+
+        let agent =
+            configs.get_coding_agent_or_default(&ExecutorProfileId::new(BaseCodingAgent::QwenCode));
+        let expected = ExecutorConfigs::from_defaults()
+            .get_coding_agent(&ExecutorProfileId::new(BaseCodingAgent::QwenCode))
+            .expect("built-in defaults must contain QWEN_CODE");
+        assert_eq!(agent, expected);
+    }
+
+    #[test]
+    fn invalid_merged_profiles_fall_back_to_defaults() {
+        let mut defaults = ExecutorConfigs::from_defaults();
+        defaults.canonicalise();
+
+        // Override that replaces CLAUDE_CODE's DEFAULT with a mismatched agent
+        // type, which fails validation.
+        let invalid_overrides = configs_from_json(
+            r#"{"executors":{"CLAUDE_CODE":{
+                "DEFAULT":{"AMP":{}}
+            }}}"#,
+        );
+
+        let merged =
+            ExecutorConfigs::merge_with_defaults_validated(defaults.clone(), invalid_overrides);
+        assert_eq!(merged, defaults);
+    }
+
+    #[test]
+    fn valid_overrides_still_merge() {
+        let mut defaults = ExecutorConfigs::from_defaults();
+        defaults.canonicalise();
+
+        let overrides = configs_from_json(
+            r#"{"executors":{"CLAUDE_CODE":{
+                "MY_VARIANT":{"CLAUDE_CODE":{"model":"sonnet"}}
+            }}}"#,
+        );
+
+        let merged = ExecutorConfigs::merge_with_defaults_validated(defaults, overrides);
+        let agent = merged
+            .get_coding_agent(&ExecutorProfileId::with_variant(
+                BaseCodingAgent::ClaudeCode,
+                "my-variant".to_string(),
+            ))
+            .expect("custom variant should be merged in");
+        match agent {
+            CodingAgent::ClaudeCode(claude) => assert_eq!(claude.model.as_deref(), Some("sonnet")),
+            other => panic!("expected ClaudeCode config, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn builtin_defaults_have_default_config_for_every_executor() {
+        // Guards the final fallback in get_coding_agent_or_default.
+        let defaults = ExecutorConfigs::from_defaults();
+        for (executor, profile) in &defaults.executors {
+            assert!(
+                profile.get_default().is_some(),
+                "built-in defaults must contain a DEFAULT configuration for {executor}"
+            );
+        }
+        assert!(
+            defaults
+                .get_coding_agent(&ExecutorProfileId::new(BaseCodingAgent::ClaudeCode))
+                .is_some()
+        );
     }
 }

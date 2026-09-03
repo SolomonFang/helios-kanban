@@ -50,20 +50,24 @@ export function useExecutorSelection({
     [profiles]
   );
 
-  const effectiveExecutor = useMemo(
-    () =>
+  const effectiveExecutor = useMemo(() => {
+    // Validate the preferred executor still exists in profiles; the config
+    // may reference an agent that has since been removed.
+    const preferred =
       selectedExecutor ??
       latestProfileId?.executor ??
       configExecutorProfile?.executor ??
-      executorOptions[0] ??
-      null,
-    [
-      selectedExecutor,
-      latestProfileId?.executor,
-      configExecutorProfile?.executor,
-      executorOptions,
-    ]
-  );
+      null;
+    if (preferred && executorOptions.includes(preferred)) {
+      return preferred;
+    }
+    return executorOptions[0] ?? null;
+  }, [
+    selectedExecutor,
+    latestProfileId?.executor,
+    configExecutorProfile?.executor,
+    executorOptions,
+  ]);
 
   const variantOptions = useMemo(
     () => getVariantOptions(effectiveExecutor, profiles),

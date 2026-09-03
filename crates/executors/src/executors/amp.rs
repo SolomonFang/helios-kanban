@@ -102,15 +102,20 @@ impl StandardCodingAgentExecutor for Amp {
             session_id.to_string(),
         ])?;
         let (fork_program, fork_args) = fork_line.into_resolved().await?;
-        let fork_output = Command::new(fork_program)
+        let mut fork_command = Command::new(fork_program);
+        fork_command
             .kill_on_drop(true)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .current_dir(current_dir)
             .env("NPM_CONFIG_LOGLEVEL", "error")
-            .args(&fork_args)
-            .output()
-            .await?;
+            .args(&fork_args);
+
+        env.clone()
+            .with_profile(&self.cmd)
+            .apply_to_command(&mut fork_command);
+
+        let fork_output = fork_command.output().await?;
         let stdout_str = String::from_utf8_lossy(&fork_output.stdout);
         let new_thread_id = stdout_str
             .lines()

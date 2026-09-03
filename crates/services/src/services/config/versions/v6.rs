@@ -1,13 +1,16 @@
 use std::str::FromStr;
 
 use anyhow::Error;
-use executors::{executors::BaseCodingAgent, profile::ExecutorProfileId};
+use executors::{
+    executors::BaseCodingAgent,
+    profile::{ExecutorProfileId, canonical_variant_key},
+};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use utils;
 pub use v5::{EditorConfig, EditorType, GitHubConfig, NotificationConfig, SoundFile, ThemeMode};
 
-use crate::services::config::versions::v5;
+use crate::services::config::versions::{v4::ProfileVariantLabel, v5};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, TS, Default)]
 #[ts(export)]
@@ -44,6 +47,26 @@ pub struct Config {
     pub language: UiLanguage,
 }
 
+/// Convert a legacy v5 `ProfileVariantLabel` (kebab-case profile name, e.g.
+/// "claude-code") into an `ExecutorProfileId` (SCREAMING_SNAKE_CASE executor
+/// plus canonical variant). Unknown executor names fall back to ClaudeCode.
+fn executor_profile_from_v5(profile: &ProfileVariantLabel) -> ExecutorProfileId {
+    let normalized = profile.profile.replace('-', "_").to_uppercase();
+    let base_coding_agent = BaseCodingAgent::from_str(&normalized).unwrap_or_else(|_| {
+        tracing::warn!(
+            "Unknown executor '{}' in v5 config, falling back to CLAUDE_CODE",
+            profile.profile
+        );
+        BaseCodingAgent::ClaudeCode
+    });
+    match &profile.variant {
+        Some(variant) => {
+            ExecutorProfileId::with_variant(base_coding_agent, canonical_variant_key(variant))
+        }
+        None => ExecutorProfileId::new(base_coding_agent),
+    }
+}
+
 impl Config {
     pub fn from_previous_version(raw_config: &str) -> Result<Self, Error> {
         let old_config = match serde_json::from_str::<v5::Config>(raw_config) {
@@ -76,10 +99,7 @@ impl Config {
         }
 
         // Validate and convert ProfileVariantLabel
-        let old_coding_agent = old_config.profile.profile.to_uppercase();
-        let base_coding_agent =
-            BaseCodingAgent::from_str(&old_coding_agent).unwrap_or(BaseCodingAgent::ClaudeCode);
-        let executor_profile = ExecutorProfileId::new(base_coding_agent);
+        let executor_profile = executor_profile_from_v5(&old_config.profile);
 
         Ok(Self {
             config_version: "v6".to_string(),
@@ -141,5 +161,46 @@ impl Default for Config {
             show_release_notes: false,
             language: UiLanguage::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migrates_multi_word_kebab_case_profile_name() {
+        // "qwen-code".to_uppercase() is "QWEN-CODE", which does not match the
+        // SCREAMING_SNAKE_CASE enum representation; the old code silently fell
+        // back to ClaudeCode for any multi-word profile name.
+        let profile = ProfileVariantLabel::default("qwen-code".to_string());
+        let id = executor_profile_from_v5(&profile);
+        assert_eq!(id.executor, BaseCodingAgent::QwenCode);
+        assert_eq!(id.variant, None);
+    }
+
+    #[test]
+    fn migrates_single_word_profile_name() {
+        let profile = ProfileVariantLabel::default("claude-code".to_string());
+        let id = executor_profile_from_v5(&profile);
+        assert_eq!(id.executor, BaseCodingAgent::ClaudeCode);
+        assert_eq!(id.variant, None);
+    }
+
+    #[test]
+    fn preserves_variant_during_migration() {
+        let profile =
+            ProfileVariantLabel::with_variant("claude-code".to_string(), "plan".to_string());
+        let id = executor_profile_from_v5(&profile);
+        assert_eq!(id.executor, BaseCodingAgent::ClaudeCode);
+        assert_eq!(id.variant.as_deref(), Some("PLAN"));
+    }
+
+    #[test]
+    fn unknown_profile_falls_back_to_claude_code() {
+        let profile = ProfileVariantLabel::default("not-a-real-agent".to_string());
+        let id = executor_profile_from_v5(&profile);
+        assert_eq!(id.executor, BaseCodingAgent::ClaudeCode);
+        assert_eq!(id.variant, None);
     }
 }

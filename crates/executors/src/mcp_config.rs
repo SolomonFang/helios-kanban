@@ -22,6 +22,12 @@ fn is_jsonc_file(path: &Path) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("jsonc"))
 }
 
+fn is_toml_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("toml"))
+}
+
 static DEFAULT_MCP_JSON: &str = include_str!("../default_mcp.json");
 pub static PRECONFIGURED_MCP_SERVERS: LazyLock<Value> = LazyLock::new(|| {
     serde_json::from_str::<Value>(DEFAULT_MCP_JSON).expect("Failed to parse default MCP JSON")
@@ -61,7 +67,7 @@ pub async fn read_agent_config(
     mcp_config: &McpConfig,
 ) -> Result<Value, ExecutorError> {
     if let Ok(file_content) = fs::read_to_string(config_path).await {
-        if mcp_config.is_toml_config {
+        if mcp_config.is_toml_config || is_toml_file(config_path) {
             if file_content.trim().is_empty() {
                 return Ok(serde_json::json!({}));
             }
@@ -90,7 +96,7 @@ pub async fn write_agent_config(
     mcp_config: &McpConfig,
     config: &Value,
 ) -> Result<(), ExecutorError> {
-    if mcp_config.is_toml_config {
+    if mcp_config.is_toml_config || is_toml_file(config_path) {
         let toml_value: toml::Value = serde_json::from_str(&serde_json::to_string(config)?)?;
         let toml_content = toml::to_string_pretty(&toml_value)?;
         fs::write(config_path, toml_content).await?;
@@ -401,8 +407,10 @@ impl CodingAgent {
             | CodingAgent::Amp(_)
             | CodingAgent::Droid(_)
             | CodingAgent::Reasonix(_)
-            | CodingAgent::KimiCli(_)
-            | CodingAgent::DeepseekHarness(_) => Passthrough,
+            | CodingAgent::KimiCli(_) => Passthrough,
+            // DeepseekHarness exposes no MCP config file (default_mcp_config_path
+            // returns None), so there is nothing to preconfigure.
+            CodingAgent::DeepseekHarness(_) => return serde_json::json!({}),
             CodingAgent::QwenCode(_) | CodingAgent::Gemini(_) => Gemini,
             CodingAgent::CursorAgent(_) => Cursor,
             CodingAgent::Codex(_) => Codex,

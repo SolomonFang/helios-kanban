@@ -1,4 +1,5 @@
 import { useMemo, useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import Form from '@rjsf/core';
 import type { IChangeEvent } from '@rjsf/core';
 import { RJSFValidationError } from '@rjsf/utils';
@@ -35,6 +36,7 @@ export function ExecutorConfigForm({
   isSaving = false,
   isDirty = false,
 }: ExecutorConfigFormProps) {
+  const { t } = useTranslation(['settings', 'common']);
   const [formData, setFormData] = useState<unknown>(value || {});
   const [validationErrors, setValidationErrors] = useState<
     RJSFValidationError[]
@@ -107,7 +109,7 @@ export function ExecutorConfigForm({
     return (
       <Alert variant="destructive">
         <AlertDescription>
-          Schema not found for executor type: {executor}
+          {t('settings.agents.errors.schemaNotFound', { executor })}
         </AlertDescription>
       </Alert>
     );
@@ -142,7 +144,7 @@ export function ExecutorConfigForm({
                   {isSaving && (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   )}
-                  Save Configuration
+                  {t('settings.agents.editor.saveConfig')}
                 </Button>
               </div>
             )}

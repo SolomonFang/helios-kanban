@@ -317,7 +317,8 @@
         "jsonLabel": "에이전트 구성 (JSON)",
         "jsonPlaceholder": "프로필 로딩 중...",
         "jsonLoading": "로딩 중...",
-        "pathLabel": "구성 파일 위치:"
+        "pathLabel": "구성 파일 위치:",
+        "saveConfig": "구성 저장"
       },
       "errors": {
         "deleteFailed": "구성을 삭제하지 못했습니다. 다시 시도해 주세요.",
@@ -336,6 +337,23 @@
       "deleteConfigDialog": {
         "title": "구성을 삭제하시겠습니까?",
         "description": "{{executorType}} 실행자에서 \"{{configName}}\"을(를) 영구적으로 삭제합니다. 이 작업은 되돌릴 수 없습니다."
+      },
+      "createConfigDialog": {
+        "title": "새 구성 만들기",
+        "description": "{{executorType}} 실행기에 새 구성을 추가합니다.",
+        "nameLabel": "구성 이름",
+        "namePlaceholder": "예: PRODUCTION, DEVELOPMENT",
+        "cloneFromLabel": "복제 원본 (선택 사항)",
+        "cloneFromPlaceholder": "빈 구성으로 시작하거나 기존 구성 복제",
+        "startBlank": "빈 구성으로 시작",
+        "cloneFrom": "{{name}}에서 복제",
+        "createButton": "구성 만들기",
+        "errors": {
+          "empty": "구성 이름은 비워 둘 수 없습니다",
+          "tooLong": "구성 이름은 40자 이하여야 합니다",
+          "invalidChars": "구성 이름에는 문자, 숫자, 밑줄, 하이픈만 사용할 수 있습니다",
+          "exists": "이 이름의 구성이 이미 있습니다"
+        }
       }
     },
     "mcp": {
@@ -492,6 +510,20 @@
         "discard": "취소",
         "confirmSwitch": "저장되지 않은 변경사항이 있습니다. 정말 저장소를 전환하시겠습니까? 변경사항이 손실됩니다."
       }
+    },
+    "onboarding": {
+      "title": "Helios Kanban에 오신 것을 환영합니다",
+      "description": "코딩 환경 설정을 시작합니다. 언제든지 설정에서 변경할 수 있습니다.",
+      "agentSectionTitle": "코딩 에이전트 선택",
+      "defaultAgentLabel": "기본 에이전트",
+      "agentPlaceholder": "선호하는 코딩 에이전트를 선택하세요",
+      "editorSectionTitle": "코드 편집기 선택",
+      "editorLabel": "선호하는 편집기",
+      "editorPlaceholder": "선호하는 편집기를 선택하세요",
+      "editorHelper": "이 편집기는 작업 시도와 프로젝트 파일을 여는 데 사용됩니다.",
+      "customCommandLabel": "사용자 지정 명령",
+      "customCommandPlaceholder": "예: code, subl, vim",
+      "customCommandHelper": "사용자 지정 편집기를 실행할 명령을 입력하세요. 인수는 공백으로 구분합니다(예: \"code --wait\")."
     }
   },
   "integrations": {

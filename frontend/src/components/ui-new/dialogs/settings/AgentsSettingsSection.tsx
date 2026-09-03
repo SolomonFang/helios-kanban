@@ -31,6 +31,7 @@ import {
 } from './SettingsComponents';
 import { useSettingsDirty } from './SettingsDirtyContext';
 import { AgentIcon } from '@/components/agents/AgentIcon';
+import { areProfilesEqual } from '@/utils/executor';
 
 type ExecutorsMap = Record<string, Record<string, Record<string, unknown>>>;
 
@@ -228,7 +229,7 @@ export function AgentsSettingsSection() {
       await updateAndSaveConfig({
         executor_profile: {
           executor: executor as BaseCodingAgent,
-          variant: config,
+          variant: config === 'DEFAULT' ? null : config,
         },
       });
       reloadSystem();
@@ -441,10 +442,10 @@ export function AgentsSettingsSection() {
                 Object.keys(
                   localParsedProfiles.executors[selectedExecutorType]
                 ).map((configName) => {
-                  const isDefault =
-                    config?.executor_profile?.executor ===
-                      selectedExecutorType &&
-                    config?.executor_profile?.variant === configName;
+                  const isDefault = areProfilesEqual(config?.executor_profile, {
+                    executor: selectedExecutorType,
+                    variant: configName === 'DEFAULT' ? null : configName,
+                  });
                   const configCount = Object.keys(
                     localParsedProfiles.executors[selectedExecutorType] || {}
                   ).length;
@@ -581,6 +582,3 @@ function ConfigActionsDropdown({
     </DropdownMenu>
   );
 }
-
-// Alias for backwards compatibility
-export { AgentsSettingsSection as AgentsSettingsSectionContent };

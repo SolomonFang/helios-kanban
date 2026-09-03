@@ -444,7 +444,8 @@ export function GeneralSettingsSection() {
                       onClick={() => {
                         const newProfile: ExecutorProfileId = {
                           executor: draft!.executor_profile!.executor,
-                          variant: variantLabel,
+                          variant:
+                            variantLabel === 'DEFAULT' ? null : variantLabel,
                         };
                         updateDraft({ executor_profile: newProfile });
                       }}

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -36,6 +37,7 @@ const CreateConfigurationDialogImpl =
   NiceModal.create<CreateConfigurationDialogProps>(
     ({ executorType, existingConfigs }) => {
       const modal = useModal();
+      const { t } = useTranslation(['settings', 'common']);
       const [configName, setConfigName] = useState('');
       const [cloneFrom, setCloneFrom] = useState<string | null>(null);
       const [error, setError] = useState<string | null>(null);
@@ -51,14 +53,15 @@ const CreateConfigurationDialogImpl =
 
       const validateConfigName = (name: string): string | null => {
         const trimmedName = name.trim();
-        if (!trimmedName) return 'Configuration name cannot be empty';
+        if (!trimmedName)
+          return t('settings.agents.createConfigDialog.errors.empty');
         if (trimmedName.length > 40)
-          return 'Configuration name must be 40 characters or less';
+          return t('settings.agents.createConfigDialog.errors.tooLong');
         if (!/^[a-zA-Z0-9_-]+$/.test(trimmedName)) {
-          return 'Configuration name can only contain letters, numbers, underscores, and hyphens';
+          return t('settings.agents.createConfigDialog.errors.invalidChars');
         }
         if (existingConfigs.includes(trimmedName)) {
-          return 'A configuration with this name already exists';
+          return t('settings.agents.createConfigDialog.errors.exists');
         }
         return null;
       };
@@ -93,15 +96,21 @@ const CreateConfigurationDialogImpl =
         <Dialog open={modal.visible} onOpenChange={handleOpenChange}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Create New Configuration</DialogTitle>
+              <DialogTitle>
+                {t('settings.agents.createConfigDialog.title')}
+              </DialogTitle>
               <DialogDescription>
-                Add a new configuration for the {executorType} executor.
+                {t('settings.agents.createConfigDialog.description', {
+                  executorType,
+                })}
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="config-name">Configuration Name</Label>
+                <Label htmlFor="config-name">
+                  {t('settings.agents.createConfigDialog.nameLabel')}
+                </Label>
                 <Input
                   id="config-name"
                   value={configName}
@@ -109,14 +118,18 @@ const CreateConfigurationDialogImpl =
                     setConfigName(e.target.value);
                     setError(null);
                   }}
-                  placeholder="e.g., PRODUCTION, DEVELOPMENT"
+                  placeholder={t(
+                    'settings.agents.createConfigDialog.namePlaceholder'
+                  )}
                   maxLength={40}
                   autoFocus
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="clone-from">Clone from (optional)</Label>
+                <Label htmlFor="clone-from">
+                  {t('settings.agents.createConfigDialog.cloneFromLabel')}
+                </Label>
                 <Select
                   value={cloneFrom || '__blank__'}
                   onValueChange={(value) =>
@@ -124,13 +137,21 @@ const CreateConfigurationDialogImpl =
                   }
                 >
                   <SelectTrigger id="clone-from">
-                    <SelectValue placeholder="Start blank or clone existing" />
+                    <SelectValue
+                      placeholder={t(
+                        'settings.agents.createConfigDialog.cloneFromPlaceholder'
+                      )}
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__blank__">Start blank</SelectItem>
+                    <SelectItem value="__blank__">
+                      {t('settings.agents.createConfigDialog.startBlank')}
+                    </SelectItem>
                     {existingConfigs.map((configuration) => (
                       <SelectItem key={configuration} value={configuration}>
-                        Clone from {configuration}
+                        {t('settings.agents.createConfigDialog.cloneFrom', {
+                          name: configuration,
+                        })}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -146,10 +167,10 @@ const CreateConfigurationDialogImpl =
 
             <DialogFooter>
               <Button variant="outline" onClick={handleCancel}>
-                Cancel
+                {t('common:buttons.cancel')}
               </Button>
               <Button onClick={handleCreate} disabled={!configName.trim()}>
-                Create Configuration
+                {t('settings.agents.createConfigDialog.createButton')}
               </Button>
             </DialogFooter>
           </DialogContent>

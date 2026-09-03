@@ -317,7 +317,8 @@
         "jsonLabel": "Configuración de Agente (JSON)",
         "jsonPlaceholder": "Cargando perfiles...",
         "jsonLoading": "Cargando...",
-        "pathLabel": "Ubicación del archivo de configuración:"
+        "pathLabel": "Ubicación del archivo de configuración:",
+        "saveConfig": "Guardar configuración"
       },
       "errors": {
         "deleteFailed": "Error al eliminar la configuración. Por favor, inténtalo de nuevo.",
@@ -336,6 +337,23 @@
       "deleteConfigDialog": {
         "title": "¿Eliminar configuración?",
         "description": "Esto eliminará permanentemente \"{{configName}}\" del ejecutor {{executorType}}. Esta acción no se puede deshacer."
+      },
+      "createConfigDialog": {
+        "title": "Crear nueva configuración",
+        "description": "Añade una nueva configuración para el ejecutor {{executorType}}.",
+        "nameLabel": "Nombre de la configuración",
+        "namePlaceholder": "p. ej., PRODUCTION, DEVELOPMENT",
+        "cloneFromLabel": "Clonar desde (opcional)",
+        "cloneFromPlaceholder": "Empezar en blanco o clonar una existente",
+        "startBlank": "Empezar en blanco",
+        "cloneFrom": "Clonar desde {{name}}",
+        "createButton": "Crear configuración",
+        "errors": {
+          "empty": "El nombre de la configuración no puede estar vacío",
+          "tooLong": "El nombre de la configuración debe tener 40 caracteres o menos",
+          "invalidChars": "El nombre de la configuración solo puede contener letras, números, guiones bajos y guiones",
+          "exists": "Ya existe una configuración con este nombre"
+        }
       }
     },
     "mcp": {
@@ -492,6 +510,20 @@
         "discard": "Descartar",
         "confirmSwitch": "Tienes cambios sin guardar. ¿Estás seguro de que quieres cambiar de repositorio? Tus cambios se perderán."
       }
+    },
+    "onboarding": {
+      "title": "Bienvenido a Helios Kanban",
+      "description": "Configuremos tus preferencias de codificación. Siempre puedes cambiarlas más tarde en Configuración.",
+      "agentSectionTitle": "Elige tu agente de codificación",
+      "defaultAgentLabel": "Agente predeterminado",
+      "agentPlaceholder": "Selecciona tu agente de codificación preferido",
+      "editorSectionTitle": "Elige tu editor de código",
+      "editorLabel": "Editor preferido",
+      "editorPlaceholder": "Selecciona tu editor preferido",
+      "editorHelper": "Este editor se usará para abrir intentos de tareas y archivos del proyecto.",
+      "customCommandLabel": "Comando personalizado",
+      "customCommandPlaceholder": "p. ej., code, subl, vim",
+      "customCommandHelper": "Introduce el comando para ejecutar tu editor personalizado. Usa espacios para los argumentos (p. ej., \"code --wait\")."
     }
   },
   "integrations": {
