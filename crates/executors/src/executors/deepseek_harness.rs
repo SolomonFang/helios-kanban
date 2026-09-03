@@ -36,7 +36,7 @@ fn base_command(native_binary: bool) -> &'static str {
     if native_binary {
         "dsh"
     } else {
-        "npx -y @deepseek-ai/dsh@0.1.1-rc.2"
+        "npx -y @deepseek-ai/dsh"
     }
 }
 

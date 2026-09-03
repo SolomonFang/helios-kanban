@@ -34,7 +34,7 @@ fn base_command(native_binary: bool) -> &'static str {
     if native_binary {
         "reasonix"
     } else {
-        "npx -y reasonix@1.36.0"
+        "npx -y reasonix@latest"
     }
 }
 

@@ -59,7 +59,7 @@ pub struct KimiCli {
 
 impl KimiCli {
     fn build_command_builder(&self) -> Result<CommandBuilder, CommandBuildError> {
-        let builder = CommandBuilder::new("npx -y @moonshot-ai/kimi-code@0.40.1");
+        let builder = CommandBuilder::new("npx -y @moonshot-ai/kimi-code");
         let builder = builder.extend_params(["acp"]);
         apply_overrides(builder, &self.cmd)
     }
