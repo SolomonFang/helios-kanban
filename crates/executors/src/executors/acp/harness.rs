@@ -32,6 +32,7 @@ pub struct AcpAgentHarness {
     model: Option<String>,
     mode: Option<String>,
     native_session_resume: bool,
+    tool_auto_approve: bool,
 }
 
 impl Default for AcpAgentHarness {
@@ -49,6 +50,7 @@ impl AcpAgentHarness {
             model: None,
             mode: None,
             native_session_resume: false,
+            tool_auto_approve: false,
         }
     }
 
@@ -59,6 +61,7 @@ impl AcpAgentHarness {
             model: None,
             mode: None,
             native_session_resume: false,
+            tool_auto_approve: false,
         }
     }
 
@@ -69,6 +72,15 @@ impl AcpAgentHarness {
 
     pub fn with_mode(mut self, mode: impl Into<String>) -> Self {
         self.mode = Some(mode.into());
+        self
+    }
+
+    /// Auto-approve non-question permission requests client-side while still
+    /// routing AskUserQuestion prompts to the approval service. Used for
+    /// yolo-style profiles: tools run unattended, but user questions must
+    /// still reach the UI (kimi's own yolo mode also keeps questions).
+    pub fn with_tool_auto_approve(mut self, enabled: bool) -> Self {
+        self.tool_auto_approve = enabled;
         self
     }
 
@@ -120,6 +132,7 @@ impl AcpAgentHarness {
             self.model.clone(),
             self.mode.clone(),
             self.native_session_resume,
+            self.tool_auto_approve,
             approvals,
             cancel.clone(),
         )
@@ -174,6 +187,7 @@ impl AcpAgentHarness {
             self.model.clone(),
             self.mode.clone(),
             self.native_session_resume,
+            self.tool_auto_approve,
             approvals,
             cancel.clone(),
         )
@@ -197,6 +211,7 @@ impl AcpAgentHarness {
         model: Option<String>,
         mode: Option<String>,
         native_session_resume: bool,
+        tool_auto_approve: bool,
         approvals: Option<std::sync::Arc<dyn ExecutorApprovalService>>,
         cancel: CancellationToken,
     ) -> Result<(), ExecutorError> {
@@ -314,8 +329,12 @@ impl AcpAgentHarness {
                         let session_manager = std::sync::Arc::new(session_manager);
 
                         // Create ACP client with approvals support
-                        let client =
-                            AcpClient::new(event_tx.clone(), approvals.clone(), cancel.clone());
+                        let client = AcpClient::new(
+                            event_tx.clone(),
+                            approvals.clone(),
+                            cancel.clone(),
+                            tool_auto_approve,
+                        );
                         let client_feedback_handle = client.clone();
 
                         client.record_user_prompt_event(&prompt);

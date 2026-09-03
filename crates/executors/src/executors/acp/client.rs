@@ -107,6 +107,10 @@ pub struct AcpClient {
     feedback_queue: Arc<Mutex<Vec<String>>>,
     cancel: CancellationToken,
     terminals: Arc<Mutex<HashMap<String, Terminal>>>,
+    /// Auto-approve non-question permission requests even when an approval
+    /// service is attached (yolo-style profiles). Questions still go through
+    /// the approval service.
+    auto_approve_tools: bool,
 }
 
 impl AcpClient {
@@ -115,6 +119,7 @@ impl AcpClient {
         event_tx: mpsc::UnboundedSender<AcpEvent>,
         approvals: Option<Arc<dyn ExecutorApprovalService>>,
         cancel: CancellationToken,
+        auto_approve_tools: bool,
     ) -> Self {
         Self {
             event_tx,
@@ -122,6 +127,7 @@ impl AcpClient {
             feedback_queue: Arc::new(Mutex::new(Vec::new())),
             cancel,
             terminals: Arc::new(Mutex::new(HashMap::new())),
+            auto_approve_tools,
         }
     }
 
@@ -538,11 +544,13 @@ impl acp::Client for AcpClient {
         // tagging the embedded tool call with the fixed title.
         let is_question = args.tool_call.fields.title.as_deref() == Some(ASK_USER_QUESTION_TITLE);
 
-        if self.approvals.is_none() {
+        // Auto-approve when no approval service is configured, or — for
+        // non-question requests — when the profile asked for client-side
+        // auto-approval (yolo). Questions are the exception: never fabricate
+        // an answer — dismiss the prompt via its skip option so the agent
+        // decides on its own.
+        if self.approvals.is_none() || (self.auto_approve_tools && !is_question) {
             self.send_event(AcpEvent::RequestPermission(args.clone(), None));
-            // Auto-approve with best available option when no approval service is
-            // configured. Questions are the exception: never fabricate an answer —
-            // dismiss the prompt via its skip option so the agent decides on its own.
             // Prefer AllowOnce over AllowAlways: an always-allow may be persisted
             // by the agent (e.g. kimi writes always-allow rules), leaking the
             // auto-approval beyond this run.

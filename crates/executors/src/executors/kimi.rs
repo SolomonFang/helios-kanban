@@ -74,17 +74,18 @@ impl KimiCli {
         if let Some(model) = &self.model {
             harness = harness.with_model(model.clone());
         }
+        // Yolo auto-approves tool permissions client-side, but questions must
+        // still reach the user (kimi's own yolo mode keeps questions too).
+        harness = harness.with_tool_auto_approve(matches!(self.mode, Some(KimiMode::Yolo)));
         harness
     }
 
     fn approvals_for_mode(&self) -> Option<Arc<dyn ExecutorApprovalService>> {
-        // YOLO is handled client-side: when no approval service is attached
-        // the ACP harness auto-approves all permission requests.
-        if matches!(self.mode, Some(KimiMode::Yolo)) {
-            None
-        } else {
-            self.approvals.clone()
-        }
+        // Always attach the approval service when one is injected: yolo
+        // auto-approval of tool permissions is handled client-side by the
+        // harness (`with_tool_auto_approve`), so AskUserQuestion prompts can
+        // still be routed to the user in every mode.
+        self.approvals.clone()
     }
 }
 
