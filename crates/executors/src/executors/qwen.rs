@@ -12,9 +12,10 @@ use crate::{
     command::{CmdOverrides, CommandBuildError, CommandBuilder, apply_overrides},
     env::ExecutionEnv,
     executors::{
-        AppendPrompt, AvailabilityInfo, ExecutorError, SpawnedChild, StandardCodingAgentExecutor,
-        gemini::AcpAgentHarness,
+        AppendPrompt, AvailabilityInfo, BaseCodingAgent, ExecutorError, SpawnedChild,
+        StandardCodingAgentExecutor, gemini::AcpAgentHarness, utils::SlashCommandCacheKey,
     },
+    logs::utils::patch,
 };
 
 #[derive(Derivative, Clone, Serialize, Deserialize, TS, JsonSchema)]
@@ -81,7 +82,7 @@ impl StandardCodingAgentExecutor for QwenCode {
         current_dir: &Path,
         prompt: &str,
         session_id: &str,
-        _reset_to_message_id: Option<&str>,
+        reset_to_message_id: Option<&str>,
         env: &ExecutionEnv,
     ) -> Result<SpawnedChild, ExecutorError> {
         let qwen_command = self.build_command_builder()?.build_follow_up(&[])?;
@@ -97,12 +98,37 @@ impl StandardCodingAgentExecutor for QwenCode {
                 current_dir,
                 combined_prompt,
                 session_id,
+                reset_to_message_id,
                 qwen_command,
                 env,
                 &self.cmd,
                 approvals,
             )
             .await
+    }
+
+    async fn available_slash_commands(
+        &self,
+        workdir: &Path,
+    ) -> Result<futures::stream::BoxStream<'static, json_patch::Patch>, ExecutorError> {
+        let this = self.clone();
+        let workdir = workdir.to_path_buf();
+        Ok(Box::pin(futures::stream::once(async move {
+            let commands = match this.build_command_builder().and_then(|b| b.build_initial()) {
+                Ok(parts) => {
+                    let key = SlashCommandCacheKey::new(&workdir, &BaseCodingAgent::QwenCode);
+                    crate::executors::acp::discover_acp_slash_commands(
+                        parts, &workdir, &this.cmd, &key,
+                    )
+                    .await
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to build Qwen command for slash command probe: {e}");
+                    Vec::new()
+                }
+            };
+            patch::slash_commands(commands, false, None)
+        })))
     }
 
     fn normalize_logs(&self, msg_store: Arc<MsgStore>, worktree_path: &Path) {

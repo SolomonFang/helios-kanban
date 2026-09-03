@@ -4,7 +4,6 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use agent_client_protocol::{self as acp, SessionNotification};
 use futures::StreamExt;
 use regex::Regex;
 use serde::Deserialize;
@@ -324,25 +323,25 @@ pub fn normalize_logs(msg_store: Arc<MsgStore>, worktree_path: &Path) {
                         // arrives via the regular ToolCall/ToolUpdate events.
                         if let Some(meta) = meta {
                             if let Some(tool_data) = tool_states.get_mut(&tool_call_id) {
-                                tool_data.status_override =
-                                    Some(LogToolStatus::PendingApproval {
-                                        approval_id: meta.approval_id,
-                                        requested_at: meta.requested_at,
-                                        timeout_at: meta.timeout_at,
-                                    });
+                                tool_data.status_override = Some(LogToolStatus::PendingApproval {
+                                    approval_id: meta.approval_id,
+                                    requested_at: meta.requested_at,
+                                    timeout_at: meta.timeout_at,
+                                });
                                 let entry = build_tool_entry(tool_data);
-                                msg_store.push_patch(ConversationPatch::replace(
-                                    tool_data.index,
-                                    entry,
-                                ));
+                                msg_store
+                                    .push_patch(ConversationPatch::replace(tool_data.index, entry));
                             } else {
-                                tracing::debug!(
-                                    "Elicitation for unknown tool call {tool_call_id}"
-                                );
+                                tracing::debug!("Elicitation for unknown tool call {tool_call_id}");
                             }
                         }
                     }
-                    AcpEvent::User(_) | AcpEvent::Other(_) => (),
+                    AcpEvent::User(user_prompt) => {
+                        if let Some(message_id) = user_prompt.message_id {
+                            msg_store.push_message_id(message_id);
+                        }
+                    }
+                    AcpEvent::Other(_) => (),
                 }
             }
         }
@@ -880,28 +879,6 @@ pub enum ParsedLine {
     Event(AcpEvent),
     Error(String),
     Done,
-}
-
-impl TryFrom<SessionNotification> for AcpEvent {
-    type Error = ();
-
-    fn try_from(notification: SessionNotification) -> Result<Self, ()> {
-        let event = match notification.update {
-            acp::SessionUpdate::AgentMessageChunk(chunk) => AcpEvent::Message(chunk.content),
-            acp::SessionUpdate::AgentThoughtChunk(chunk) => AcpEvent::Thought(chunk.content),
-            acp::SessionUpdate::ToolCall(tc) => AcpEvent::ToolCall(tc),
-            acp::SessionUpdate::ToolCallUpdate(update) => AcpEvent::ToolUpdate(update),
-            acp::SessionUpdate::Plan(plan) => AcpEvent::Plan(plan),
-            acp::SessionUpdate::AvailableCommandsUpdate(update) => {
-                AcpEvent::AvailableCommands(update.available_commands)
-            }
-            acp::SessionUpdate::CurrentModeUpdate(update) => {
-                AcpEvent::CurrentMode(update.current_mode_id)
-            }
-            _ => return Err(()),
-        };
-        Ok(event)
-    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

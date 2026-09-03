@@ -40,7 +40,9 @@
               "agents/droid",
               "agents/ccr",
               "agents/qwen-code",
-              "agents/kimi-cli"
+              "agents/kimi-cli",
+              "agents/reasonix",
+              "agents/deepseek-harness"
             ]
           }
         ]

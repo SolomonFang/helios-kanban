@@ -306,12 +306,18 @@
     "REASONIX": {
       "DEFAULT": {
         "REASONIX": {
+          "use_code_mode": true,
           "dangerously_skip_permissions": true
         }
       },
       "PRO": {
         "REASONIX": {
           "model": "deepseek-v4-pro",
+          "dangerously_skip_permissions": true
+        }
+      },
+      "RUN_MODE": {
+        "REASONIX": {
           "dangerously_skip_permissions": true
         }
       },

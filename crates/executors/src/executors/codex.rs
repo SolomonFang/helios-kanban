@@ -228,9 +228,14 @@ impl StandardCodingAgentExecutor for Codex {
         current_dir: &Path,
         prompt: &str,
         session_id: &str,
-        _reset_to_message_id: Option<&str>,
+        reset_to_message_id: Option<&str>,
         env: &ExecutionEnv,
     ) -> Result<SpawnedChild, ExecutorError> {
+        if reset_to_message_id.is_some() {
+            tracing::warn!(
+                "Codex does not support per-message session reset; ignoring reset_to_message_id"
+            );
+        }
         self.spawn_slash_command(current_dir, prompt, Some(session_id), env)
             .await
     }

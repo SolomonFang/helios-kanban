@@ -17,7 +17,9 @@ use workspace_utils::approvals::{
 
 use crate::{
     approvals::{ExecutorApprovalError, ExecutorApprovalService},
-    executors::acp::{AcpEvent, ApprovalResponse, PendingApprovalMeta, QuestionResponse},
+    executors::acp::{
+        AcpEvent, ApprovalResponse, PendingApprovalMeta, QuestionResponse, UserPrompt,
+    },
 };
 
 /// Tool call title the kimi ACP adapter uses when bridging the AskUserQuestion
@@ -132,7 +134,7 @@ impl AcpClient {
     }
 
     pub fn record_user_prompt_event(&self, prompt: &str) {
-        self.send_event(AcpEvent::User(prompt.to_string()));
+        self.send_event(AcpEvent::User(UserPrompt::new(prompt)));
     }
 
     /// Send an event to the event channel
@@ -229,8 +231,7 @@ impl AcpClient {
 
         let outcome = match &status {
             QuestionStatus::Answered { answers } => {
-                let (selected, additional, custom) =
-                    match_question_option(&args.options, answers);
+                let (selected, additional, custom) = match_question_option(&args.options, answers);
                 if !additional.is_empty() {
                     self.enqueue_feedback(format_answer_feedback(
                         "The user also answered additional question(s):",
@@ -701,6 +702,12 @@ impl acp::Client for AcpClient {
             acp::SessionUpdate::ToolCall(tc) => Some(AcpEvent::ToolCall(tc)),
             acp::SessionUpdate::ToolCallUpdate(update) => Some(AcpEvent::ToolUpdate(update)),
             acp::SessionUpdate::Plan(plan) => Some(AcpEvent::Plan(plan)),
+            acp::SessionUpdate::AvailableCommandsUpdate(update) => {
+                Some(AcpEvent::AvailableCommands(update.available_commands))
+            }
+            acp::SessionUpdate::CurrentModeUpdate(update) => {
+                Some(AcpEvent::CurrentMode(update.current_mode_id))
+            }
             _ => Some(AcpEvent::Other(args)),
         };
 
@@ -1063,8 +1070,7 @@ mod tests {
 
     #[test]
     fn format_answer_feedback_keeps_questions_and_labels() {
-        let feedback =
-            format_answer_feedback("header:", &[answered("q1", &["x", "y"])]);
+        let feedback = format_answer_feedback("header:", &[answered("q1", &["x", "y"])]);
         assert!(feedback.starts_with("header:"));
         assert!(feedback.contains("q1: x, y"));
     }

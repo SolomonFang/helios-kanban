@@ -77,6 +77,10 @@ pub struct RunConfig {
     pub directory: String,
     pub prompt: String,
     pub resume_session_id: Option<String>,
+    /// When set, the follow-up forks the resumed session at this user message
+    /// (`session.fork` keeps only messages *before* it), dropping the edited
+    /// message and everything after it.
+    pub reset_to_message_id: Option<String>,
     pub model: Option<String>,
     pub model_variant: Option<String>,
     pub agent: Option<String>,
@@ -335,7 +339,7 @@ async fn run_session_inner(
         Some(existing) => {
             tokio::select! {
                 _ = cancel.cancelled() => return Ok(()),
-                res = fork_session(&client, &config.base_url, &config.directory, existing) => res?,
+                res = fork_session(&client, &config.base_url, &config.directory, existing, config.reset_to_message_id.as_deref()) => res?,
             }
         }
         None => tokio::select! {
@@ -577,11 +581,16 @@ pub async fn fork_session(
     base_url: &str,
     directory: &str,
     session_id: &str,
+    message_id: Option<&str>,
 ) -> Result<String, ExecutorError> {
+    let body = match message_id {
+        Some(id) => serde_json::json!({"messageID": id}),
+        None => serde_json::json!({}),
+    };
     let resp = client
         .post(format!("{base_url}/session/{session_id}/fork"))
         .query(&[("directory", directory)])
-        .json(&serde_json::json!({}))
+        .json(&body)
         .send()
         .await
         .map_err(|err| ExecutorError::Io(io::Error::other(err)))?;

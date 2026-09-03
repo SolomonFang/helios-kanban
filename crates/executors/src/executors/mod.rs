@@ -16,7 +16,7 @@ use workspace_utils::msg_store::MsgStore;
 #[cfg(feature = "qa-mode")]
 use crate::executors::qa_mock::QaMockExecutor;
 use crate::{
-    actions::{ExecutorAction, review::RepoReviewContext},
+    actions::review::RepoReviewContext,
     approvals::ExecutorApprovalService,
     command::CommandBuildError,
     env::ExecutionEnv,
@@ -197,17 +197,25 @@ impl CodingAgent {
                 BaseAgentCapability::SessionFork,
                 BaseAgentCapability::ContextUsage,
             ],
+            // The app-server has no per-message truncation API, so follow-ups
+            // always resume the full rollout.
             Self::Codex(_) => vec![
-                BaseAgentCapability::SessionFork,
                 BaseAgentCapability::SetupHelper,
                 BaseAgentCapability::ContextUsage,
             ],
-            Self::Amp(_) | Self::Gemini(_) | Self::QwenCode(_) | Self::KimiCli(_) => {
+            // `threads fork` forks the whole thread; it cannot truncate to a
+            // message.
+            Self::Amp(_) => vec![],
+            Self::Gemini(_) | Self::QwenCode(_) | Self::KimiCli(_) => {
                 vec![BaseAgentCapability::SessionFork]
             }
             Self::DeepseekHarness(_) => vec![BaseAgentCapability::SessionFork],
             Self::CursorAgent(_) => vec![BaseAgentCapability::SetupHelper],
-            Self::Copilot(_) | Self::Droid(_) | Self::Reasonix(_) => vec![],
+            Self::Copilot(_) => vec![BaseAgentCapability::SessionFork],
+            Self::Droid(_) => vec![],
+            // SessionFork is real only in code mode (ACP harness); the default
+            // profile enables code mode.
+            Self::Reasonix(_) => vec![BaseAgentCapability::SessionFork],
             #[cfg(feature = "qa-mode")]
             Self::QaMock(_) => vec![], // QA mock doesn't need special capabilities
         }
@@ -283,10 +291,6 @@ pub trait StandardCodingAgentExecutor {
 
     // MCP configuration methods
     fn default_mcp_config_path(&self) -> Option<std::path::PathBuf>;
-
-    async fn get_setup_helper_action(&self) -> Result<ExecutorAction, ExecutorError> {
-        Err(ExecutorError::SetupHelperNotSupported)
-    }
 
     fn get_availability_info(&self) -> AvailabilityInfo {
         let config_files_found = self

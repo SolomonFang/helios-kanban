@@ -114,9 +114,14 @@ impl StandardCodingAgentExecutor for CursorAgent {
         current_dir: &Path,
         prompt: &str,
         session_id: &str,
-        _reset_to_message_id: Option<&str>,
+        reset_to_message_id: Option<&str>,
         env: &ExecutionEnv,
     ) -> Result<SpawnedChild, ExecutorError> {
+        if reset_to_message_id.is_some() {
+            tracing::warn!(
+                "Cursor does not support per-message session reset; ignoring reset_to_message_id"
+            );
+        }
         mcp::ensure_mcp_server_trust(self, current_dir).await;
 
         let command_parts = self

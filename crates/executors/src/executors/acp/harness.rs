@@ -92,6 +92,192 @@ impl AcpAgentHarness {
         self
     }
 
+    /// Spawn a short-lived ACP connection to discover the agent's available
+    /// slash commands (`available_commands` session update). Returns an empty
+    /// list when the agent does not report commands within the timeout.
+    pub async fn probe_available_commands(
+        command_parts: CommandParts,
+        current_dir: &Path,
+        env: &ExecutionEnv,
+        cmd_overrides: &CmdOverrides,
+    ) -> Vec<proto::AvailableCommand> {
+        const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+        match tokio::time::timeout(
+            PROBE_TIMEOUT + std::time::Duration::from_secs(5),
+            Self::probe_available_commands_inner(
+                command_parts,
+                current_dir,
+                env,
+                cmd_overrides,
+                PROBE_TIMEOUT,
+            ),
+        )
+        .await
+        {
+            Ok(Ok(commands)) => commands,
+            Ok(Err(e)) => {
+                tracing::debug!("ACP slash command probe failed: {e}");
+                Vec::new()
+            }
+            Err(_) => {
+                tracing::debug!("ACP slash command probe timed out");
+                Vec::new()
+            }
+        }
+    }
+
+    async fn probe_available_commands_inner(
+        command_parts: CommandParts,
+        current_dir: &Path,
+        env: &ExecutionEnv,
+        cmd_overrides: &CmdOverrides,
+        timeout: std::time::Duration,
+    ) -> Result<Vec<proto::AvailableCommand>, ExecutorError> {
+        let (program_path, args) = command_parts.into_resolved().await?;
+        let mut command = Command::new(program_path);
+        command
+            .kill_on_drop(true)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .current_dir(current_dir)
+            .env("NPM_CONFIG_LOGLEVEL", "error")
+            .env("NODE_NO_WARNINGS", "1")
+            .args(&args);
+
+        env.clone()
+            .with_profile(cmd_overrides)
+            .apply_to_command(&mut command);
+
+        let mut child = command.group_spawn()?;
+
+        let orig_stdout = child.inner().stdout.take().ok_or_else(|| {
+            ExecutorError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Child process has no stdout",
+            ))
+        })?;
+        let orig_stdin = child.inner().stdin.take().ok_or_else(|| {
+            ExecutorError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Child process has no stdin",
+            ))
+        })?;
+
+        // Process stdout -> ACP
+        let (mut to_acp_writer, acp_incoming_reader) = tokio::io::duplex(64 * 1024);
+        tokio::spawn(async move {
+            let mut stdout_stream = ReaderStream::new(orig_stdout);
+            while let Some(res) = stdout_stream.next().await {
+                match res {
+                    Ok(data) => {
+                        if to_acp_writer.write_all(&data).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        // ACP crate expects futures::AsyncRead + AsyncWrite, use tokio compat to adapt tokio::io::AsyncRead + Write
+        let (acp_out_writer, acp_out_reader) = tokio::io::duplex(64 * 1024);
+        let outgoing = acp_out_writer.compat_write();
+        let incoming = acp_incoming_reader.compat();
+
+        // Process ACP -> stdin
+        tokio::spawn(async move {
+            let mut child_stdin = orig_stdin;
+            let mut lines = ReaderStream::new(acp_out_reader)
+                .map(|res| res.map(|bytes| String::from_utf8_lossy(&bytes).into_owned()))
+                .lines();
+            while let Some(result) = lines.next().await {
+                match result {
+                    Ok(line) => {
+                        // Use \r\n on Windows for compatibility with buggy ACP implementations
+                        const LINE_ENDING: &str = if cfg!(windows) { "\r\n" } else { "\n" };
+                        let line = line + LINE_ENDING;
+                        if child_stdin.write_all(line.as_bytes()).await.is_err() {
+                            break;
+                        }
+                        let _ = child_stdin.flush().await;
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        let cwd = current_dir.to_path_buf();
+        let (result_tx, result_rx) =
+            tokio::sync::oneshot::channel::<Vec<proto::AvailableCommand>>();
+
+        // Run ACP client in a LocalSet (mirrors bootstrap_acp_connection)
+        tokio::task::spawn_blocking(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("build runtime");
+
+            rt.block_on(async move {
+                let local = tokio::task::LocalSet::new();
+                local
+                    .run_until(async move {
+                        let (event_tx, mut event_rx) =
+                            mpsc::unbounded_channel::<crate::executors::acp::AcpEvent>();
+
+                        let client = AcpClient::new(event_tx, None, CancellationToken::new(), true);
+
+                        let (conn, io_fut) =
+                            proto::ClientSideConnection::new(client, outgoing, incoming, |fut| {
+                                tokio::task::spawn_local(fut);
+                            });
+                        let conn = Rc::new(conn);
+
+                        tokio::task::spawn_local(async move {
+                            let _ = io_fut.await;
+                        });
+
+                        let result = async {
+                            conn.initialize(proto::InitializeRequest::new(
+                                proto::ProtocolVersion::V1,
+                            ))
+                            .await?;
+                            conn.new_session(proto::NewSessionRequest::new(cwd)).await?;
+
+                            while let Some(event) = event_rx.recv().await {
+                                if let AcpEvent::AvailableCommands(commands) = event {
+                                    return Ok::<Vec<proto::AvailableCommand>, proto::Error>(
+                                        commands,
+                                    );
+                                }
+                            }
+                            Ok(Vec::new())
+                        };
+
+                        let commands = match tokio::time::timeout(timeout, result).await {
+                            Ok(Ok(commands)) => commands,
+                            Ok(Err(e)) => {
+                                tracing::debug!("ACP slash command probe connection error: {e}");
+                                Vec::new()
+                            }
+                            Err(_) => Vec::new(),
+                        };
+
+                        let _ = result_tx.send(commands);
+                        drop(conn);
+                    })
+                    .await;
+            });
+        });
+
+        let commands = result_rx.await.unwrap_or_default();
+
+        let _ = workspace_utils::process::kill_process_group(&mut child).await;
+
+        Ok(commands)
+    }
+
     pub async fn spawn_with_command(
         &self,
         current_dir: &Path,
@@ -126,6 +312,7 @@ impl AcpAgentHarness {
             &mut child,
             current_dir.to_path_buf(),
             None,
+            None,
             prompt,
             Some(exit_tx),
             self.session_namespace.clone(),
@@ -151,6 +338,7 @@ impl AcpAgentHarness {
         current_dir: &Path,
         prompt: String,
         session_id: &str,
+        reset_to_message_id: Option<&str>,
         command_parts: CommandParts,
         env: &ExecutionEnv,
         cmd_overrides: &CmdOverrides,
@@ -181,6 +369,7 @@ impl AcpAgentHarness {
             &mut child,
             current_dir.to_path_buf(),
             Some(session_id.to_string()),
+            reset_to_message_id.map(str::to_string),
             prompt,
             Some(exit_tx),
             self.session_namespace.clone(),
@@ -205,6 +394,7 @@ impl AcpAgentHarness {
         child: &mut AsyncGroupChild,
         cwd: PathBuf,
         existing_session: Option<String>,
+        reset_to_message_id: Option<String>,
         prompt: String,
         exit_signal: Option<tokio::sync::oneshot::Sender<ExecutorExitResult>>,
         session_namespace: String,
@@ -363,24 +553,33 @@ impl AcpAgentHarness {
                                 .into_iter()
                                 .collect(),
                         );
-                        if let Err(e) = conn
+                        let agent_capabilities = match conn
                             .initialize(
                                 proto::InitializeRequest::new(proto::ProtocolVersion::V1)
                                     .client_capabilities(capabilities),
                             )
                             .await
                         {
-                            error!("Failed to initialize ACP connection: {e}");
-                            let _ = log_tx
-                                .send(AcpEvent::Error(format!("{e}")).to_string());
-                            return;
-                        }
+                            Ok(resp) => resp.agent_capabilities,
+                            Err(e) => {
+                                error!("Failed to initialize ACP connection: {e}");
+                                let _ = log_tx
+                                    .send(AcpEvent::Error(format!("{e}")).to_string());
+                                return;
+                            }
+                        };
 
                         // Handle session creation/forking
                         let (acp_session_id, display_session_id, prompt_to_send) =
                             if let Some(existing) = existing_session {
                                 let mut native_loaded = false;
-                                if native_session_resume {
+                                // `session/load` cannot truncate history, so a
+                                // per-message reset always goes through the
+                                // fork path below.
+                                if native_session_resume
+                                    && reset_to_message_id.is_none()
+                                    && agent_capabilities.load_session
+                                {
                                     match conn
                                         .load_session(proto::LoadSessionRequest::new(
                                             existing.clone(),
@@ -419,7 +618,11 @@ impl AcpAgentHarness {
                                 } else {
                                     // Fork existing session
                                     let new_ui_id = uuid::Uuid::new_v4().to_string();
-                                    let _ = session_manager.fork_session(&existing, &new_ui_id);
+                                    let _ = session_manager.fork_session(
+                                        &existing,
+                                        &new_ui_id,
+                                        reset_to_message_id.as_deref(),
+                                    );
 
                                     let history =
                                         session_manager.read_session_raw(&new_ui_id).ok();

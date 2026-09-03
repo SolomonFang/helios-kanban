@@ -154,9 +154,14 @@ impl StandardCodingAgentExecutor for Droid {
         current_dir: &Path,
         prompt: &str,
         session_id: &str,
-        _reset_to_message_id: Option<&str>,
+        reset_to_message_id: Option<&str>,
         env: &ExecutionEnv,
     ) -> Result<SpawnedChild, ExecutorError> {
+        if reset_to_message_id.is_some() {
+            tracing::warn!(
+                "Droid does not support per-message session reset; ignoring reset_to_message_id"
+            );
+        }
         let continue_cmd = self
             .build_command_builder()?
             .build_follow_up(&["--session-id".to_string(), session_id.to_string()])?;

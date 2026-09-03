@@ -18,9 +18,13 @@ use crate::{
     command::{CmdOverrides, CommandBuildError, CommandBuilder, CommandParts, apply_overrides},
     env::ExecutionEnv,
     executors::{
-        AppendPrompt, AvailabilityInfo, ExecutorError, SpawnedChild, StandardCodingAgentExecutor,
+        AppendPrompt, AvailabilityInfo, BaseCodingAgent, ExecutorError, SpawnedChild,
+        StandardCodingAgentExecutor, utils::SlashCommandCacheKey,
     },
-    logs::{stdout_processor::normalize_stdout_logs, utils::EntryIndexProvider},
+    logs::{
+        stdout_processor::normalize_stdout_logs,
+        utils::{EntryIndexProvider, patch},
+    },
 };
 
 /// Session namespace used by the ACP harness to persist reasonix sessions.
@@ -30,7 +34,7 @@ fn base_command(native_binary: bool) -> &'static str {
     if native_binary {
         "reasonix"
     } else {
-        "npx -y reasonix@latest"
+        "npx -y reasonix@1.36.0"
     }
 }
 
@@ -223,7 +227,7 @@ impl StandardCodingAgentExecutor for Reasonix {
         current_dir: &Path,
         prompt: &str,
         session_id: &str,
-        _reset_to_message_id: Option<&str>,
+        reset_to_message_id: Option<&str>,
         env: &ExecutionEnv,
     ) -> Result<SpawnedChild, ExecutorError> {
         if !self.is_code_mode() {
@@ -239,12 +243,43 @@ impl StandardCodingAgentExecutor for Reasonix {
                 current_dir,
                 combined_prompt,
                 session_id,
+                reset_to_message_id,
                 command,
                 env,
                 &self.cmd,
                 self.acp_approvals(),
             )
             .await
+    }
+
+    async fn available_slash_commands(
+        &self,
+        workdir: &Path,
+    ) -> Result<futures::stream::BoxStream<'static, json_patch::Patch>, ExecutorError> {
+        if !self.is_code_mode() {
+            return Ok(Box::pin(futures::stream::once(async move {
+                patch::slash_commands(Vec::new(), false, None)
+            })));
+        }
+
+        let this = self.clone();
+        let workdir = workdir.to_path_buf();
+        Ok(Box::pin(futures::stream::once(async move {
+            let commands = match this
+                .build_acp_command_builder()
+                .and_then(|b| b.build_initial())
+            {
+                Ok(parts) => {
+                    let key = SlashCommandCacheKey::new(&workdir, &BaseCodingAgent::Reasonix);
+                    super::acp::discover_acp_slash_commands(parts, &workdir, &this.cmd, &key).await
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to build Reasonix command for slash command probe: {e}");
+                    Vec::new()
+                }
+            };
+            patch::slash_commands(commands, false, None)
+        })))
     }
 
     fn normalize_logs(&self, msg_store: Arc<MsgStore>, worktree_path: &Path) {

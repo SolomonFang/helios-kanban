@@ -211,6 +211,11 @@ impl LogState {
             SdkEvent::MessageUpdated(event) => {
                 let info = event.info;
                 self.maybe_emit_model_system_message(&info);
+                if info.role == MessageRole::User {
+                    // Track user message ids so follow-ups can fork the session
+                    // at a specific message (`session.fork` with `messageID`).
+                    msg_store.push_message_id(info.id.clone());
+                }
                 self.message_roles.insert(info.id, info.role);
             }
             SdkEvent::MessagePartUpdated(event) => {

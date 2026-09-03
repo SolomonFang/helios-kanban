@@ -151,6 +151,7 @@ impl Opencode {
         current_dir: &Path,
         prompt: &str,
         resume_session: Option<&str>,
+        reset_to_message_id: Option<&str>,
         env: &ExecutionEnv,
     ) -> Result<SpawnedChild, ExecutorError> {
         let slash_command = OpencodeSlashCommand::parse(prompt);
@@ -183,6 +184,7 @@ impl Opencode {
         let agent = self.agent.clone();
         let auto_approve = self.auto_approve;
         let resume_session_id = resume_session.map(|s| s.to_string());
+        let reset_to_message_id = reset_to_message_id.map(|s| s.to_string());
         let models_cache_key = self.compute_models_cache_key();
         let cancel_for_task = cancel.clone();
         let commit_reminder = env.commit_reminder;
@@ -208,6 +210,7 @@ impl Opencode {
                 directory,
                 prompt: combined_prompt,
                 resume_session_id,
+                reset_to_message_id,
                 model,
                 model_variant,
                 agent,
@@ -347,7 +350,8 @@ impl StandardCodingAgentExecutor for Opencode {
     ) -> Result<SpawnedChild, ExecutorError> {
         let env = setup_permissions_env(self.auto_approve, env);
         let env = setup_compaction_env(self.auto_compact, &env);
-        self.spawn_inner(current_dir, prompt, None, &env).await
+        self.spawn_inner(current_dir, prompt, None, None, &env)
+            .await
     }
 
     async fn spawn_follow_up(
@@ -355,13 +359,19 @@ impl StandardCodingAgentExecutor for Opencode {
         current_dir: &Path,
         prompt: &str,
         session_id: &str,
-        _reset_to_message_id: Option<&str>,
+        reset_to_message_id: Option<&str>,
         env: &ExecutionEnv,
     ) -> Result<SpawnedChild, ExecutorError> {
         let env = setup_permissions_env(self.auto_approve, env);
         let env = setup_compaction_env(self.auto_compact, &env);
-        self.spawn_inner(current_dir, prompt, Some(session_id), &env)
-            .await
+        self.spawn_inner(
+            current_dir,
+            prompt,
+            Some(session_id),
+            reset_to_message_id,
+            &env,
+        )
+        .await
     }
 
     fn normalize_logs(&self, msg_store: Arc<MsgStore>, worktree_path: &Path) {

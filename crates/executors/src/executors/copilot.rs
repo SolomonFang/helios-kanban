@@ -13,8 +13,10 @@ use crate::{
     command::{CmdOverrides, CommandBuildError, CommandBuilder, apply_overrides},
     env::ExecutionEnv,
     executors::{
-        AppendPrompt, AvailabilityInfo, ExecutorError, SpawnedChild, StandardCodingAgentExecutor,
+        AppendPrompt, AvailabilityInfo, BaseCodingAgent, ExecutorError, SpawnedChild,
+        StandardCodingAgentExecutor, utils::SlashCommandCacheKey,
     },
+    logs::utils::patch,
 };
 
 #[derive(Derivative, Clone, Serialize, Deserialize, TS, JsonSchema)]
@@ -112,7 +114,7 @@ impl StandardCodingAgentExecutor for Copilot {
         current_dir: &Path,
         prompt: &str,
         session_id: &str,
-        _reset_to_message_id: Option<&str>,
+        reset_to_message_id: Option<&str>,
         env: &ExecutionEnv,
     ) -> Result<SpawnedChild, ExecutorError> {
         let harness = AcpAgentHarness::new();
@@ -123,12 +125,34 @@ impl StandardCodingAgentExecutor for Copilot {
                 current_dir,
                 combined_prompt,
                 session_id,
+                reset_to_message_id,
                 copilot_command,
                 env,
                 &self.cmd,
                 self.approvals.clone(),
             )
             .await
+    }
+
+    async fn available_slash_commands(
+        &self,
+        workdir: &Path,
+    ) -> Result<futures::stream::BoxStream<'static, json_patch::Patch>, ExecutorError> {
+        let this = self.clone();
+        let workdir = workdir.to_path_buf();
+        Ok(Box::pin(futures::stream::once(async move {
+            let commands = match this.build_command_builder().and_then(|b| b.build_initial()) {
+                Ok(parts) => {
+                    let key = SlashCommandCacheKey::new(&workdir, &BaseCodingAgent::Copilot);
+                    super::acp::discover_acp_slash_commands(parts, &workdir, &this.cmd, &key).await
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to build Copilot command for slash command probe: {e}");
+                    Vec::new()
+                }
+            };
+            patch::slash_commands(commands, false, None)
+        })))
     }
 
     fn normalize_logs(&self, msg_store: Arc<MsgStore>, worktree_path: &Path) {
