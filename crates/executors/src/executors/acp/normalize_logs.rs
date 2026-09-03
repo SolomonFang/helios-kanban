@@ -394,11 +394,12 @@ pub fn normalize_logs(msg_store: Arc<MsgStore>, worktree_path: &Path) {
         }
 
         fn map_to_action_type(tc: &PartialToolCallData) -> ActionType {
-            // Kimi bridges AskUserQuestion through ACP: surface the questions
-            // so the UI can render the interactive question banner.
-            if tc.title == ASK_USER_QUESTION_TITLE
-                && let Some(questions) = parse_ask_user_questions(tc.raw_input.as_ref())
-            {
+            // AskUserQuestion calls carry the full questions payload in
+            // `raw_input` — detect them by shape, not title: kimi emits the
+            // canonical title ("AskUserQuestion") only on the initial
+            // tool_call, while the update that delivers `raw_input` is titled
+            // with the human-readable description ("Asking user questions").
+            if let Some(questions) = parse_ask_user_questions(tc.raw_input.as_ref()) {
                 return ActionType::AskUserQuestion { questions };
             }
             match tc.kind {
@@ -629,7 +630,9 @@ pub fn normalize_logs(msg_store: Arc<MsgStore>, worktree_path: &Path) {
         }
 
         fn get_tool_content(tc: &PartialToolCallData) -> String {
-            if tc.title == ASK_USER_QUESTION_TITLE {
+            if tc.title == ASK_USER_QUESTION_TITLE
+                || parse_ask_user_questions(tc.raw_input.as_ref()).is_some()
+            {
                 return "Ask user question".to_string();
             }
             match tc.kind {
@@ -1085,11 +1088,40 @@ mod tests {
             success_pos.is_some_and(|s| Some(s) > pending_pos),
             "expected a success status patch after the pending one: {patches:?}"
         );
+    }
+
+    /// Real kimi wire sequence in elicitation mode: the initial `tool_call`
+    /// carries the canonical title but no raw input; the questions payload
+    /// arrives later in a `tool_call_update` titled with the human-readable
+    /// description. The entry must still become an interactive
+    /// ask_user_question.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn question_update_with_human_title_maps_to_ask_user_question() {
+        let msg_store = Arc::new(MsgStore::new());
+        normalize_logs(msg_store.clone(), Path::new("/tmp"));
+
+        msg_store.push_stdout(
+            "{\"ToolCall\":{\"toolCallId\":\"0:ask_2\",\"title\":\"AskUserQuestion\",\"status\":\"in_progress\",\"content\":[]}}\n"
+                .to_string(),
+        );
+        msg_store.push_stdout(
+            "{\"ToolUpdate\":{\"toolCallId\":\"0:ask_2\",\"title\":\"Asking user questions\",\"status\":\"in_progress\",\"rawInput\":{\"questions\":[{\"question\":\"显示验证?\",\"header\":\"显示验证\",\"options\":[{\"label\":\"正常\",\"description\":\"ok\"}],\"multiSelect\":false}]}}}\n"
+                .to_string(),
+        );
+        msg_store.push_stdout(
+            "{\"Elicitation\":{\"tool_call_id\":\"0:ask_2\",\"meta\":{\"approval_id\":\"ap-e2\",\"requested_at\":\"2026-07-18T01:00:00Z\",\"timeout_at\":\"2026-07-18T11:00:00Z\"}}}\n"
+                .to_string(),
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let patches = patch_payloads(&msg_store);
         assert!(
             patches
                 .iter()
-                .any(|p| p.contains("user_answered_questions") && p.contains("方案 A: 复用 R2")),
-            "expected a user_answered_questions entry with the answer, got: {patches:?}"
+                .any(|p| p.contains("\"action\":\"ask_user_question\"")
+                    && p.contains("\"status\":\"pending_approval\"")
+                    && p.contains("ap-e2")),
+            "expected a pending_approval ask_user_question entry, got: {patches:?}"
         );
     }
 }
