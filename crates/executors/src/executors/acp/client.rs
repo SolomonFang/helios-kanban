@@ -215,10 +215,21 @@ impl AcpClient {
 
         let outcome = match &status {
             QuestionStatus::Answered { answers } => {
-                let (selected, unmatched) = match_question_option(&args.options, answers);
-                if !unmatched.is_empty() {
-                    self.enqueue_feedback(format_answer_feedback(&unmatched))
-                        .await;
+                let (selected, additional, custom) =
+                    match_question_option(&args.options, answers);
+                if !additional.is_empty() {
+                    self.enqueue_feedback(format_answer_feedback(
+                        "The user also answered additional question(s):",
+                        &additional,
+                    ))
+                    .await;
+                }
+                if !custom.is_empty() {
+                    self.enqueue_feedback(format_answer_feedback(
+                        "The user answered the question(s) with custom text:",
+                        &custom,
+                    ))
+                    .await;
                 }
                 if let Some(option_id) = selected {
                     acp::RequestPermissionOutcome::Selected(acp::SelectedPermissionOutcome::new(
@@ -264,48 +275,62 @@ fn skip_option(options: &[acp::PermissionOption]) -> Option<&acp::PermissionOpti
 ///
 /// Returns the selected option id — the first answer label of the first
 /// question matching an `allow_once` option name — plus the answers that
-/// could not be mapped (custom free-text replies and answers to questions
-/// beyond the first, which the ACP bridge cannot represent).
+/// could not be mapped, split into `additional` (valid answers the bridge
+/// cannot represent: questions beyond the first, and extra labels of a
+/// multi-select first question) and `custom` (free-text replies matching no
+/// offered option).
 fn match_question_option(
     options: &[acp::PermissionOption],
     answers: &[QuestionAnswer],
-) -> (Option<acp::PermissionOptionId>, Vec<QuestionAnswer>) {
+) -> (
+    Option<acp::PermissionOptionId>,
+    Vec<QuestionAnswer>,
+    Vec<QuestionAnswer>,
+) {
     let mut selected = None;
-    let mut unmatched = Vec::new();
+    let mut additional = Vec::new();
+    let mut custom = Vec::new();
     for (idx, qa) in answers.iter().enumerate() {
-        let mut leftover_labels = Vec::new();
+        let mut additional_labels = Vec::new();
+        let mut custom_labels = Vec::new();
         for label in &qa.answer {
-            let option = if idx == 0 {
-                options.iter().find(|o| {
-                    matches!(o.kind, acp::PermissionOptionKind::AllowOnce) && o.name == *label
-                })
-            } else {
-                None
-            };
-            match option {
-                Some(opt) if selected.is_none() => selected = Some(opt.option_id.clone()),
-                _ => leftover_labels.push(label.clone()),
+            let option = options.iter().find(|o| {
+                matches!(o.kind, acp::PermissionOptionKind::AllowOnce) && o.name == *label
+            });
+            match (idx == 0, option) {
+                (true, Some(opt)) if selected.is_none() => {
+                    selected = Some(opt.option_id.clone());
+                }
+                (true, Some(_)) => additional_labels.push(label.clone()),
+                (true, None) => custom_labels.push(label.clone()),
+                (false, _) => additional_labels.push(label.clone()),
             }
         }
-        if !leftover_labels.is_empty() {
-            unmatched.push(QuestionAnswer {
+        if !additional_labels.is_empty() {
+            additional.push(QuestionAnswer {
                 question: qa.question.clone(),
-                answer: leftover_labels,
+                answer: additional_labels,
+            });
+        }
+        if !custom_labels.is_empty() {
+            custom.push(QuestionAnswer {
+                question: qa.question.clone(),
+                answer: custom_labels,
             });
         }
     }
-    (selected, unmatched)
+    (selected, additional, custom)
 }
 
 /// Format answers the bridge could not map as user feedback, so no input is
 /// silently dropped.
-fn format_answer_feedback(answers: &[QuestionAnswer]) -> String {
+fn format_answer_feedback(header: &str, answers: &[QuestionAnswer]) -> String {
     let lines = answers
         .iter()
         .map(|qa| format!("- {}: {}", qa.question, qa.answer.join(", ")))
         .collect::<Vec<_>>()
         .join("\n");
-    format!("The user answered the question(s) with custom text:\n{lines}")
+    format!("{header}\n{lines}")
 }
 
 #[async_trait(?Send)]
@@ -323,16 +348,19 @@ impl acp::Client for AcpClient {
             // Auto-approve with best available option when no approval service is
             // configured. Questions are the exception: never fabricate an answer —
             // dismiss the prompt via its skip option so the agent decides on its own.
+            // Prefer AllowOnce over AllowAlways: an always-allow may be persisted
+            // by the agent (e.g. kimi writes always-allow rules), leaking the
+            // auto-approval beyond this run.
             let chosen_option = if is_question {
                 skip_option(&args.options)
             } else {
                 args.options
                     .iter()
-                    .find(|o| matches!(o.kind, acp::PermissionOptionKind::AllowAlways))
+                    .find(|o| matches!(o.kind, acp::PermissionOptionKind::AllowOnce))
                     .or_else(|| {
                         args.options
                             .iter()
-                            .find(|o| matches!(o.kind, acp::PermissionOptionKind::AllowOnce))
+                            .find(|o| matches!(o.kind, acp::PermissionOptionKind::AllowAlways))
                     })
                     .or_else(|| args.options.first())
             };
@@ -683,27 +711,30 @@ mod tests {
     fn match_question_option_maps_label_to_offered_option() {
         let options = question_options();
         let answers = vec![answered("按哪个方案改?", &["方案 B"])];
-        let (selected, unmatched) = match_question_option(&options, &answers);
+        let (selected, additional, custom) = match_question_option(&options, &answers);
         assert_eq!(selected.unwrap().0.as_ref(), "q0_opt_1");
-        assert!(unmatched.is_empty());
+        assert!(additional.is_empty());
+        assert!(custom.is_empty());
     }
 
     #[test]
     fn match_question_option_never_maps_an_answer_to_the_skip_option() {
         let options = question_options();
         let answers = vec![answered("q", &["Skip"])];
-        let (selected, unmatched) = match_question_option(&options, &answers);
+        let (selected, additional, custom) = match_question_option(&options, &answers);
         assert!(selected.is_none());
-        assert_eq!(unmatched.len(), 1);
+        assert!(additional.is_empty());
+        assert_eq!(custom.len(), 1);
     }
 
     #[test]
-    fn match_question_option_collects_custom_answers_as_unmatched() {
+    fn match_question_option_collects_custom_answers() {
         let options = question_options();
         let answers = vec![answered("q", &["自定义回答"])];
-        let (selected, unmatched) = match_question_option(&options, &answers);
+        let (selected, additional, custom) = match_question_option(&options, &answers);
         assert!(selected.is_none());
-        assert_eq!(unmatched[0].answer, vec!["自定义回答".to_string()]);
+        assert!(additional.is_empty());
+        assert_eq!(custom[0].answer, vec!["自定义回答".to_string()]);
     }
 
     #[test]
@@ -714,10 +745,22 @@ mod tests {
             // The ACP bridge cannot represent answers beyond the first question
             answered("q2", &["方案 B"]),
         ];
-        let (selected, unmatched) = match_question_option(&options, &answers);
+        let (selected, additional, custom) = match_question_option(&options, &answers);
         assert_eq!(selected.unwrap().0.as_ref(), "q0_opt_0");
-        assert_eq!(unmatched.len(), 1);
-        assert_eq!(unmatched[0].question, "q2");
+        assert_eq!(additional.len(), 1);
+        assert_eq!(additional[0].question, "q2");
+        assert!(custom.is_empty());
+    }
+
+    #[test]
+    fn match_question_option_treats_extra_multi_select_labels_as_additional() {
+        let options = question_options();
+        let answers = vec![answered("q1", &["方案 A", "方案 B"])];
+        let (selected, additional, custom) = match_question_option(&options, &answers);
+        assert_eq!(selected.unwrap().0.as_ref(), "q0_opt_0");
+        assert_eq!(additional.len(), 1);
+        assert_eq!(additional[0].answer, vec!["方案 B".to_string()]);
+        assert!(custom.is_empty());
     }
 
     #[test]
@@ -738,7 +781,9 @@ mod tests {
 
     #[test]
     fn format_answer_feedback_keeps_questions_and_labels() {
-        let feedback = format_answer_feedback(&[answered("q1", &["x", "y"])]);
+        let feedback =
+            format_answer_feedback("header:", &[answered("q1", &["x", "y"])]);
+        assert!(feedback.starts_with("header:"));
         assert!(feedback.contains("q1: x, y"));
     }
 

@@ -334,14 +334,20 @@ impl AcpAgentHarness {
 
                         // Initialize, advertising the terminal capability so
                         // the agent can run commands via `terminal/*` methods.
-                        let _ = conn
+                        if let Err(e) = conn
                             .initialize(
                                 proto::InitializeRequest::new(proto::ProtocolVersion::V1)
                                     .client_capabilities(
                                         proto::ClientCapabilities::new().terminal(true),
                                     ),
                             )
-                            .await;
+                            .await
+                        {
+                            error!("Failed to initialize ACP connection: {e}");
+                            let _ = log_tx
+                                .send(AcpEvent::Error(format!("{e}")).to_string());
+                            return;
+                        }
 
                         // Handle session creation/forking
                         let (acp_session_id, display_session_id, prompt_to_send) =
@@ -446,7 +452,13 @@ impl AcpAgentHarness {
                                 .await
                             {
                                 Ok(_) => {}
-                                Err(e) => error!("Failed to set session mode: {}", e),
+                                Err(e) => {
+                                    // Not safety-critical: surface the failure
+                                    // but keep running on the default model.
+                                    error!("Failed to set session model: {e}");
+                                    let _ = log_tx
+                                        .send(AcpEvent::Error(format!("{e}")).to_string());
+                                }
                             }
                         }
 
@@ -459,7 +471,15 @@ impl AcpAgentHarness {
                                 .await
                             {
                                 Ok(_) => {}
-                                Err(e) => error!("Failed to set session mode: {}", e),
+                                Err(e) => {
+                                    // Permission mode decides which approvals
+                                    // reach the user; never run in the wrong
+                                    // mode silently.
+                                    error!("Failed to set session mode: {e}");
+                                    let _ = log_tx
+                                        .send(AcpEvent::Error(format!("{e}")).to_string());
+                                    return;
+                                }
                             }
                         }
 
