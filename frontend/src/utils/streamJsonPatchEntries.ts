@@ -3,6 +3,7 @@ import { produce } from 'immer';
 import type { Operation } from 'rfc6902';
 import type { TokenUsageInfo } from 'shared/types';
 import { applyUpsertPatch } from '@/utils/jsonPatch';
+import { toWsUrl } from '@/lib/ws';
 
 type PatchContainer<E = unknown> = { entries: E[] };
 
@@ -122,7 +123,7 @@ export function streamJsonPatchEntries<E = unknown>(
   const subscribers = new Set<(entries: E[]) => void>();
   if (opts.onEntries) subscribers.add(opts.onEntries);
 
-  const wsUrl = url.replace(/^http/, 'ws');
+  const wsUrl = toWsUrl(url);
   const ws = new WebSocket(wsUrl);
 
   let pendingOps: Operation[] = [];

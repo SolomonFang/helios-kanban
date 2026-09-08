@@ -9,6 +9,7 @@ import {
 } from 'react';
 import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
+import { toWsUrl } from '@/lib/ws';
 
 export interface TerminalInstance {
   terminal: Terminal;
@@ -368,7 +369,7 @@ export function TerminalProvider({ children }: TerminalProviderProps) {
         }
 
         // Create new WebSocket
-        const wsEndpoint = endpoint.replace(/^http/, 'ws');
+        const wsEndpoint = toWsUrl(endpoint);
         const ws = new WebSocket(wsEndpoint);
 
         ws.onopen = () => {
