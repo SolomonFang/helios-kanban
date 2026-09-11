@@ -3,15 +3,17 @@ name: helios-kanban-remote
 description: >-
   Remote control Helios Kanban (helios-kanban) via REST API — list/create/update
   tasks, start/stop coding agents, follow-up, check status, handle approvals.
-  Use when the user wants to control kanban from phone/chat, mentions Helios
-  Kanban / helios-kanban / vibe-kanban remotely, or asks to create tasks, start
-  agents, or check progress on a running instance. If the skill is not installed
-  yet, read and follow INSTALL.md to self-install from GitHub first.
+  Multi-end: works with any AI agent (Claude Code, Cursor, Kimi Code, Codex, …)
+  on any device — desktop, phone chat bot, or server automation. Use when the
+  user wants to control kanban from any end, mentions Helios Kanban /
+  helios-kanban / vibe-kanban remotely, or asks to create tasks, start agents,
+  or check progress on a running instance. If the skill is not installed yet,
+  read and follow INSTALL.md to self-install from GitHub first.
 ---
 
 # Helios Kanban Remote Control
 
-Control a running [Helios Kanban](https://github.com/SolomonFang/vibe-kanban) instance over HTTP. Designed for chat bots (e.g. Hermes on phone) that can run shell commands or HTTP requests on a host with network access to the kanban server.
+Control a running [Helios Kanban](https://github.com/SolomonFang/vibe-kanban) instance over HTTP. **Multi-end by design**: any AI agent (Claude Code, Cursor, Kimi Code, Codex, …) on any end — desktop IDE/CLI, phone chat bot, or server automation — can use it. The only requirements are `bash` + `curl` + `jq` and network access to the kanban server.
 
 ## Prerequisites
 
@@ -168,7 +170,7 @@ https://github.com/SolomonFang/vibe-kanban/blob/hly-dev/skills/helios-kanban-rem
 ## MCP (same machine) vs this skill (remote)
 
 - **Same host as the kanban server** → prefer the MCP server. It covers the full orchestration surface: project/task CRUD, `create_project`, `create_task_and_start`, `start/stop_workspace_session`, `follow_up_session`, `queue_message`, `get_task_status`, `list_approvals` / `respond_to_approval`, `list_branches`, `list_tags`.
-- **Remote (phone bot, another host)** → use `hk.sh` over HTTP, as this skill documents.
+- **Remote / any other end** (phone bot, another host, server automation) → use `hk.sh` over HTTP, as this skill documents.
 - New capabilities land in the MCP server first; `hk.sh` mirrors them for remote use. If the two drift, the REST API in [reference.md](reference.md) is the source of truth.
 
 ```json

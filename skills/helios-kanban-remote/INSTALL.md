@@ -1,6 +1,6 @@
 # Agent Self-Install Guide — Helios Kanban Remote Skill
 
-> **Audience**: AI agents (Cursor, Claude Code, Hermes, Codex, etc.)
+> **Audience**: Any AI agent, on any end — desktop (Claude Code, Cursor, Kimi Code, Codex, …), phone chat bots, server daemons. The skill is agent-agnostic: plain Markdown + one bash script.
 >
 > **Trigger**: User says "安装 helios-kanban-remote 技能", "install helios kanban skill", or gives you this repo / INSTALL.md URL.
 >
@@ -50,13 +50,13 @@ Determine agent type and `SKILLS_ROOT`:
 | Agent | `SKILLS_ROOT` |
 |-------|---------------|
 | Kimi Code | `$HOME/.agents/skills` |
-| Cursor (global) | `$HOME/.cursor/skills` |
 | Claude Code | `$HOME/.claude/skills` |
+| Cursor (global) | `$HOME/.cursor/skills` |
 | Cursor (project) | `<workspace>/.cursor/skills` |
-| Hermes / other | user-provided, or `$HOME/.cursor/skills` |
+| Codex / Gemini CLI / OpenCode / other | The agent's documented skills directory if it has one; otherwise `$HOME/.agents/skills` as a generic convention, or a user-provided path |
 
 ```bash
-SKILLS_ROOT="$HOME/.cursor/skills"   # adjust per table
+SKILLS_ROOT="$HOME/.agents/skills"   # adjust per table
 SKILL_DIR="$SKILLS_ROOT/helios-kanban-remote"
 REPO_URL="https://github.com/SolomonFang/vibe-kanban.git"
 BRANCH="hly-dev"
@@ -64,6 +64,8 @@ REPO_DIR=""   # set in Step 2
 ```
 
 **Do not** install into `~/.cursor/skills-cursor/` (reserved by Cursor).
+
+**Agents without a skills system**: the skill is just Markdown + `scripts/hk.sh`. Copy it anywhere readable and follow `SKILL.md` manually — no install directory is required.
 
 ---
 
