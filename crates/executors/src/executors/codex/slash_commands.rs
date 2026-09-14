@@ -190,10 +190,13 @@ impl Codex {
                     message,
                     phase: None,
                     memory_citation: None,
+                    delivery: None,
+                    questions: None,
                 }),
                 Err(message) => EventMsg::Error(ErrorEvent {
                     message,
                     codex_error_info: None,
+                    misalignment: None,
                 }),
             }],
         )
@@ -254,6 +257,8 @@ pub async fn log_event_raw(log_writer: &LogWriter, message: String) -> Result<()
             message,
             phase: None,
             memory_citation: None,
+            delivery: None,
+            questions: None,
         }),
     )
     .await
@@ -567,6 +572,7 @@ fn format_mcp_status(servers: &[codex_app_server_protocol::McpServerStatus]) -> 
 
 fn format_mcp_auth_status(status: &codex_app_server_protocol::McpAuthStatus) -> &'static str {
     match status {
+        codex_app_server_protocol::McpAuthStatus::Unknown => "unknown",
         codex_app_server_protocol::McpAuthStatus::Unsupported => "unsupported",
         codex_app_server_protocol::McpAuthStatus::NotLoggedIn => "not logged in",
         codex_app_server_protocol::McpAuthStatus::BearerToken => "bearer token",

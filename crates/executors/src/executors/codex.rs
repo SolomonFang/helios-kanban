@@ -300,7 +300,7 @@ impl Codex {
         if Self::detect_codex_binary() {
             "codex"
         } else {
-            "npx -y @openai/codex@0.146.0"
+            "npx -y @openai/codex@0.154.0"
         }
     }
 

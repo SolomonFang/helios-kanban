@@ -2205,6 +2205,7 @@ pub fn normalize_logs(
                 EventMsg::Error(ErrorEvent {
                     message,
                     codex_error_info,
+                    ..
                 }) => {
                     add_normalized_entry(
                         &msg_store,
@@ -2407,7 +2408,10 @@ pub fn normalize_logs(
                 | EventMsg::ThreadGoalUpdated(..)
                 | EventMsg::ThreadSettingsApplied(..)
                 | EventMsg::TurnModerationMetadata(..)
-                | EventMsg::SubAgentActivity(..) => {}
+                | EventMsg::SubAgentActivity(..)
+                | EventMsg::AuthRecoveryStarted(..)
+                | EventMsg::AuthRecoveryCompleted(..)
+                | EventMsg::ThreadQueueChanged(..) => {}
             }
         }
     });

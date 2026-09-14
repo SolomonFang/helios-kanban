@@ -68,7 +68,7 @@ pub(crate) async fn ensure_electric_role_password(
     let escaped_password = password.replace("'", "''");
     let sql = format!("ALTER ROLE electric_sync WITH PASSWORD '{escaped_password}'");
 
-    sqlx::query(&sql).execute(pool).await?;
+    sqlx::query(sqlx::AssertSqlSafe(sql)).execute(pool).await?;
 
     Ok(())
 }

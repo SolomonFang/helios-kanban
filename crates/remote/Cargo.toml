@@ -28,7 +28,7 @@ rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", 
 secrecy = "0.10.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
-sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "postgres", "uuid", "chrono", "json", "macros", "migrate", "ipnetwork"] }
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "postgres", "uuid", "chrono", "json", "macros", "migrate", "ipnetwork"] }
 ipnetwork = "0.20"
 tokio = { version = "1.0", features = ["full"] }
 tokio-stream = { version = "0.1.17", features = ["sync"] }
