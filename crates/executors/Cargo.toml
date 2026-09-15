@@ -52,6 +52,10 @@ portable-pty = "0.8"
 
 [target.'cfg(windows)'.dependencies]
 winsplit = "0.1.0"
+# winapi's `ctypes::c_void` only aliases `std::ffi::c_void` with the `std`
+# feature; codex-utils-pty (codex git dep) relies on that alias. Without this,
+# Windows builds fail with E0308 c_void mismatches.
+winapi = { version = "0.3.9", features = ["std"] }
 
 [features]
 default = []

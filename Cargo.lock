@@ -2855,6 +2855,7 @@ dependencies = [
  "uuid",
  "walkdir",
  "which",
+ "winapi",
  "winsplit",
  "xdg",
 ]
