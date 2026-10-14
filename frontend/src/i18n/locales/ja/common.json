@@ -72,6 +72,21 @@
     "fixScript": "スクリプトを修正",
     "subagent": {
       "defaultType": "サブエージェント"
+    },
+    "question": {
+      "awaiting": "回答を待っています...",
+      "timedOut": "質問がタイムアウトしました",
+      "answered": "{{count}} 件の質問に回答しました",
+      "askUser": {
+        "title": "ユーザーへの質問",
+        "progress": "({{current}}/{{total}})",
+        "multiSelect": "複数選択",
+        "confirmSelection": "選択を確定",
+        "other": "その他:",
+        "customPlaceholder": "カスタム回答を入力して Enter を押してください...",
+        "submit": "送信",
+        "submitting": "送信中..."
+      }
     }
   },
   "language": {

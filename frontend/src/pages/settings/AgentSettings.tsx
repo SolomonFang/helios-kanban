@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { cloneDeep, isEqual } from 'lodash';
 import {
   Card,
   CardContent,
@@ -9,40 +8,22 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Checkbox } from '@/components/ui/checkbox';
 import { JSONEditor } from '@/components/ui/json-editor';
-import { ChevronDown, Loader2 } from 'lucide-react';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Check, Loader2 } from 'lucide-react';
 
 import { ExecutorConfigForm } from '@/components/ExecutorConfigForm';
+import { AgentConfigPicker } from '@/components/settings/agents/AgentConfigPicker';
 import { useProfiles } from '@/hooks/useProfiles';
 import { useUserSystem } from '@/components/ConfigProvider';
 import { CreateConfigurationDialog } from '@/components/dialogs/settings/CreateConfigurationDialog';
 import { DeleteConfigurationDialog } from '@/components/dialogs/settings/DeleteConfigurationDialog';
-import { useAgentAvailability } from '@/hooks/useAgentAvailability';
-import { AgentAvailabilityIndicator } from '@/components/AgentAvailabilityIndicator';
-import { getAgentName } from '@/components/agents/AgentIcon';
-import type {
-  BaseCodingAgent,
-  ExecutorConfigs,
-  ExecutorProfileId,
-} from 'shared/types';
+import type { BaseCodingAgent, ExecutorConfigs } from 'shared/types';
 
 type ExecutorsMap = Record<string, Record<string, Record<string, unknown>>>;
+type EditorMode = 'form' | 'json';
 
 export function AgentSettings() {
   const { t } = useTranslation(['settings', 'common']);
@@ -56,23 +37,24 @@ export function AgentSettings() {
     save: saveProfiles,
   } = useProfiles();
 
-  const { config, updateAndSaveConfig, profiles, reloadSystem } =
-    useUserSystem();
+  const { config, updateAndSaveConfig, reloadSystem } = useUserSystem();
 
   // Local editor state (draft that may differ from server)
   const [localProfilesContent, setLocalProfilesContent] = useState('');
-  const [profilesSuccess, setProfilesSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [justSaved, setJustSaved] = useState(false);
 
   // Form-based editor state
-  const [useFormEditor, setUseFormEditor] = useState(true);
+  const [editorMode, setEditorMode] = useState<EditorMode>('form');
   const [selectedExecutorType, setSelectedExecutorType] =
     useState<BaseCodingAgent | null>(null);
-  const [selectedConfiguration, setSelectedConfiguration] =
-    useState<string>('DEFAULT');
+  const [selectedConfiguration, setSelectedConfiguration] = useState<
+    string | null
+  >(null);
   const [localParsedProfiles, setLocalParsedProfiles] =
     useState<ExecutorConfigs | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+  const [isJsonValid, setIsJsonValid] = useState(true);
 
   // Initialize selection from config default, falling back to first executor
   useEffect(() => {
@@ -91,17 +73,6 @@ export function AgentSettings() {
     }
   }, [config?.executor_profile, localParsedProfiles, selectedExecutorType]);
 
-  // Default executor profile state
-  const [executorDraft, setExecutorDraft] = useState<ExecutorProfileId | null>(
-    () => (config?.executor_profile ? cloneDeep(config.executor_profile) : null)
-  );
-  const [executorSaving, setExecutorSaving] = useState(false);
-  const [executorSuccess, setExecutorSuccess] = useState(false);
-  const [executorError, setExecutorError] = useState<string | null>(null);
-
-  // Check agent availability when draft executor changes
-  const agentAvailability = useAgentAvailability(executorDraft?.executor);
-
   // Sync server state to local state when not dirty
   useEffect(() => {
     if (!isDirty && serverProfilesContent) {
@@ -110,6 +81,7 @@ export function AgentSettings() {
       try {
         const parsed = JSON.parse(serverProfilesContent);
         setLocalParsedProfiles(parsed);
+        setIsJsonValid(true);
       } catch (err) {
         console.error('Failed to parse profiles JSON:', err);
         setLocalParsedProfiles(null);
@@ -117,48 +89,29 @@ export function AgentSettings() {
     }
   }, [serverProfilesContent, isDirty]);
 
-  // Check if executor draft differs from saved config
-  const executorDirty =
-    executorDraft && config?.executor_profile
-      ? !isEqual(executorDraft, config.executor_profile)
-      : false;
-
-  // Sync executor draft when config changes (only if not dirty)
-  useEffect(() => {
-    if (config?.executor_profile) {
-      setExecutorDraft((currentDraft) => {
-        // Only update if draft matches the old config (not dirty)
-        if (!currentDraft || isEqual(currentDraft, config.executor_profile)) {
-          return cloneDeep(config.executor_profile);
-        }
-        return currentDraft;
-      });
+  // Reset local editor state back to the server content
+  const discardChanges = () => {
+    setIsDirty(false);
+    setSaveError(null);
+    setLocalProfilesContent(serverProfilesContent);
+    try {
+      setLocalParsedProfiles(JSON.parse(serverProfilesContent));
+      setIsJsonValid(true);
+    } catch {
+      setLocalParsedProfiles(null);
     }
-  }, [config?.executor_profile]);
-
-  // Update executor draft
-  const updateExecutorDraft = (newProfile: ExecutorProfileId) => {
-    setExecutorDraft(newProfile);
   };
 
-  // Save executor profile
-  const handleSaveExecutorProfile = async () => {
-    if (!executorDraft || !config) return;
-
-    setExecutorSaving(true);
-    setExecutorError(null);
-
-    try {
-      await updateAndSaveConfig({ executor_profile: executorDraft });
-      setExecutorSuccess(true);
-      setTimeout(() => setExecutorSuccess(false), 3000);
-      reloadSystem();
-    } catch (err) {
-      setExecutorError(t('settings.general.save.error'));
-      console.error('Error saving executor profile:', err);
-    } finally {
-      setExecutorSaving(false);
+  // Editor mode switch with unsaved-changes guard
+  const handleModeChange = (mode: string) => {
+    if (!mode || mode === editorMode) return;
+    if (isDirty) {
+      if (!window.confirm(t('settings.agents.save.confirmSwitchMode'))) {
+        return;
+      }
+      discardChanges();
     }
+    setEditorMode(mode as EditorMode);
   };
 
   // Sync raw profiles with parsed profiles
@@ -171,34 +124,54 @@ export function AgentSettings() {
     setLocalParsedProfiles(nextProfiles as ExecutorConfigs);
     syncRawProfiles(nextProfiles);
     setIsDirty(true);
+    setIsJsonValid(true);
+  };
+
+  // Select an agent and a sensible configuration for it
+  const handleSelectExecutor = (executor: BaseCodingAgent) => {
+    setSelectedExecutorType(executor);
+    const configs = Object.keys(
+      localParsedProfiles?.executors?.[executor] || {}
+    );
+    if (configs.length === 0) {
+      setSelectedConfiguration(null);
+      return;
+    }
+    // Prefer the current default variant for this agent, then DEFAULT, then first
+    const defaultVariant =
+      config?.executor_profile?.executor === executor
+        ? (config?.executor_profile?.variant ?? 'DEFAULT')
+        : null;
+    if (defaultVariant && configs.includes(defaultVariant)) {
+      setSelectedConfiguration(defaultVariant);
+    } else if (configs.includes('DEFAULT')) {
+      setSelectedConfiguration('DEFAULT');
+    } else {
+      setSelectedConfiguration(configs[0]);
+    }
   };
 
   // Open create dialog
-  const openCreateDialog = async () => {
-    if (!selectedExecutorType) return;
+  const handleCreateConfiguration = async (executor: BaseCodingAgent) => {
     try {
       const result = await CreateConfigurationDialog.show({
-        executorType: selectedExecutorType,
+        executorType: executor,
         existingConfigs: Object.keys(
-          localParsedProfiles?.executors?.[selectedExecutorType] || {}
+          localParsedProfiles?.executors?.[executor] || {}
         ),
       });
 
       if (result.action === 'created' && result.configName) {
-        createConfiguration(
-          selectedExecutorType,
-          result.configName,
-          result.cloneFrom
-        );
+        createConfiguration(executor, result.configName, result.cloneFrom);
       }
-    } catch (error) {
+    } catch {
       // User cancelled - do nothing
     }
   };
 
   // Create new configuration
   const createConfiguration = (
-    executorType: string,
+    executorType: BaseCodingAgent,
     configName: string,
     baseConfig?: string | null
   ) => {
@@ -225,101 +198,109 @@ export function AgentSettings() {
     };
 
     markDirty(updatedProfiles);
+    setSelectedExecutorType(executorType);
     setSelectedConfiguration(configName);
   };
 
   // Open delete dialog
-  const openDeleteDialog = async (configName: string) => {
-    if (!selectedExecutorType) return;
+  const handleDeleteConfiguration = async (
+    executor: BaseCodingAgent,
+    configName: string
+  ) => {
     try {
       const result = await DeleteConfigurationDialog.show({
         configName,
-        executorType: selectedExecutorType,
+        executorType: executor,
       });
 
       if (result === 'deleted') {
-        await handleDeleteConfiguration(configName);
+        await deleteConfiguration(executor, configName);
       }
-    } catch (error) {
+    } catch {
       // User cancelled - do nothing
     }
   };
 
-  // Handle delete configuration
-  const handleDeleteConfiguration = async (configToDelete: string) => {
-    if (!localParsedProfiles || !selectedExecutorType) {
+  // Delete a configuration and save immediately
+  const deleteConfiguration = async (
+    executorType: BaseCodingAgent,
+    configToDelete: string
+  ) => {
+    if (!localParsedProfiles) return;
+
+    setSaveError(null);
+
+    const executorConfigs = localParsedProfiles.executors[executorType];
+    if (!executorConfigs?.[configToDelete]) {
       return;
     }
 
-    // Clear any previous errors
-    setSaveError(null);
+    // Check if this is the last configuration
+    const currentConfigs = Object.keys(executorConfigs);
+    if (currentConfigs.length <= 1) {
+      return;
+    }
+
+    // Remove the configuration from the executor
+    const remainingConfigs = { ...executorConfigs };
+    delete remainingConfigs[configToDelete];
+
+    const updatedProfiles = {
+      ...localParsedProfiles,
+      executors: {
+        ...localParsedProfiles.executors,
+        [executorType]: remainingConfigs,
+      },
+    };
+
+    const executorsMap = updatedProfiles.executors as unknown as ExecutorsMap;
+    // If no configurations left, create a blank DEFAULT (should not happen due to check above)
+    if (Object.keys(remainingConfigs).length === 0) {
+      executorsMap[executorType] = {
+        DEFAULT: { [executorType]: {} },
+      };
+    }
 
     try {
-      // Validate that the configuration exists
+      await saveProfiles(JSON.stringify(updatedProfiles, null, 2));
+      setLocalParsedProfiles(updatedProfiles);
+      setLocalProfilesContent(JSON.stringify(updatedProfiles, null, 2));
+      setIsDirty(false);
+
+      // Select another config if we deleted the selected one
       if (
-        !localParsedProfiles.executors[selectedExecutorType]?.[configToDelete]
+        selectedExecutorType === executorType &&
+        selectedConfiguration === configToDelete
       ) {
-        return;
+        const nextConfigs = Object.keys(executorsMap[executorType] || {});
+        setSelectedConfiguration(nextConfigs[0] || 'DEFAULT');
       }
 
-      // Check if this is the last configuration
-      const currentConfigs = Object.keys(
-        localParsedProfiles.executors[selectedExecutorType] || {}
-      );
-      if (currentConfigs.length <= 1) {
-        return;
-      }
+      // Refresh global system so deleted configs are removed elsewhere
+      reloadSystem();
+    } catch (err: unknown) {
+      console.error('Failed to save deletion to backend:', err);
+      setSaveError(t('settings.agents.errors.deleteFailed'));
+    }
+  };
 
-      // Remove the configuration from the executor
-      const remainingConfigs = {
-        ...localParsedProfiles.executors[selectedExecutorType],
-      };
-      delete remainingConfigs[configToDelete];
-
-      const updatedProfiles = {
-        ...localParsedProfiles,
-        executors: {
-          ...localParsedProfiles.executors,
-          [selectedExecutorType]: remainingConfigs,
+  // Make a configuration the default agent profile (saved immediately)
+  const handleMakeDefault = async (
+    executor: BaseCodingAgent,
+    configuration: string
+  ) => {
+    setSaveError(null);
+    try {
+      await updateAndSaveConfig({
+        executor_profile: {
+          executor,
+          variant: configuration === 'DEFAULT' ? null : configuration,
         },
-      };
-
-      const executorsMap = updatedProfiles.executors as unknown as ExecutorsMap;
-      // If no configurations left, create a blank DEFAULT (should not happen due to check above)
-      if (Object.keys(remainingConfigs).length === 0) {
-        executorsMap[selectedExecutorType] = {
-          DEFAULT: { [selectedExecutorType]: {} },
-        };
-      }
-
-      try {
-        // Save using hook
-        await saveProfiles(JSON.stringify(updatedProfiles, null, 2));
-
-        // Update local state and reset dirty flag
-        setLocalParsedProfiles(updatedProfiles);
-        setLocalProfilesContent(JSON.stringify(updatedProfiles, null, 2));
-        setIsDirty(false);
-
-        // Select the next available configuration
-        const nextConfigs = Object.keys(
-          executorsMap[selectedExecutorType] || {}
-        );
-        const nextSelected = nextConfigs[0] || 'DEFAULT';
-        setSelectedConfiguration(nextSelected);
-
-        // Show success
-        setProfilesSuccess(true);
-        setTimeout(() => setProfilesSuccess(false), 3000);
-
-        // Refresh global system so deleted configs are removed elsewhere
-        reloadSystem();
-      } catch (saveError: unknown) {
-        console.error('Failed to save deletion to backend:', saveError);
-        setSaveError(t('settings.agents.errors.deleteFailed'));
-      }
-    } catch (error) {
-      console.error('Error deleting configuration:', error);
+      });
+      reloadSystem();
+    } catch (err) {
+      console.error('Error setting default agent:', err);
+      setSaveError(t('settings.general.save.error'));
     }
   };
 
@@ -332,30 +313,35 @@ export function AgentSettings() {
       try {
         const parsed = JSON.parse(value);
         setLocalParsedProfiles(parsed);
-      } catch (err) {
+        setIsJsonValid(true);
+      } catch {
         // Invalid JSON, keep local content but clear parsed
         setLocalParsedProfiles(null);
+        setIsJsonValid(false);
       }
+    } else {
+      setLocalParsedProfiles(null);
+      setIsJsonValid(false);
     }
   };
 
+  // Unified save for both form and JSON editor modes
   const handleSaveProfiles = async () => {
-    // Clear any previous errors
     setSaveError(null);
 
-    try {
-      const contentToSave =
-        useFormEditor && localParsedProfiles
-          ? JSON.stringify(localParsedProfiles, null, 2)
-          : localProfilesContent;
+    const contentToSave =
+      editorMode === 'form' && localParsedProfiles
+        ? JSON.stringify(localParsedProfiles, null, 2)
+        : localProfilesContent;
 
+    try {
       await saveProfiles(contentToSave);
-      setProfilesSuccess(true);
       setIsDirty(false);
-      setTimeout(() => setProfilesSuccess(false), 3000);
+      setJustSaved(true);
+      setTimeout(() => setJustSaved(false), 3000);
 
       // Update the local content if using form editor
-      if (useFormEditor && localParsedProfiles) {
+      if (editorMode === 'form' && localParsedProfiles) {
         setLocalProfilesContent(contentToSave);
       }
 
@@ -393,54 +379,6 @@ export function AgentSettings() {
     markDirty(updatedProfiles);
   };
 
-  const handleExecutorConfigSave = async (formData: unknown) => {
-    if (
-      !localParsedProfiles ||
-      !localParsedProfiles.executors ||
-      !selectedExecutorType
-    )
-      return;
-
-    // Clear any previous errors
-    setSaveError(null);
-
-    // Update the parsed profiles with the saved config
-    const updatedProfiles = {
-      ...localParsedProfiles,
-      executors: {
-        ...localParsedProfiles.executors,
-        [selectedExecutorType]: {
-          ...localParsedProfiles.executors[selectedExecutorType],
-          [selectedConfiguration]: {
-            [selectedExecutorType]: formData,
-          },
-        },
-      },
-    };
-
-    // Update state
-    setLocalParsedProfiles(updatedProfiles);
-
-    // Save the updated profiles directly
-    try {
-      const contentToSave = JSON.stringify(updatedProfiles, null, 2);
-
-      await saveProfiles(contentToSave);
-      setProfilesSuccess(true);
-      setIsDirty(false);
-      setTimeout(() => setProfilesSuccess(false), 3000);
-
-      // Update the local content as well
-      setLocalProfilesContent(contentToSave);
-
-      // Refresh global system so new profiles are available elsewhere
-      reloadSystem();
-    } catch (err: unknown) {
-      console.error('Failed to save profiles:', err);
-      setSaveError(t('settings.agents.errors.saveConfigFailed'));
-    }
-  };
-
   if (profilesLoading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -449,6 +387,11 @@ export function AgentSettings() {
       </div>
     );
   }
+
+  const executorsMap = localParsedProfiles?.executors as unknown as
+    | ExecutorsMap
+    | undefined;
+  const jsonInvalid = editorMode === 'json' && isDirty && !isJsonValid;
 
   return (
     <div className="space-y-6">
@@ -462,302 +405,75 @@ export function AgentSettings() {
         </Alert>
       )}
 
-      {profilesSuccess && (
-        <Alert variant="success">
-          <AlertDescription className="font-medium">
-            {t('settings.agents.save.success')}
-          </AlertDescription>
-        </Alert>
-      )}
-
       {saveError && (
         <Alert variant="destructive">
           <AlertDescription>{saveError}</AlertDescription>
         </Alert>
       )}
 
-      {executorError && (
+      {jsonInvalid && (
         <Alert variant="destructive">
-          <AlertDescription>{executorError}</AlertDescription>
-        </Alert>
-      )}
-
-      {executorSuccess && (
-        <Alert variant="success">
-          <AlertDescription className="font-medium">
-            {t('settings.general.save.success')}
+          <AlertDescription>
+            {t('settings.agents.errors.invalidJson')}
           </AlertDescription>
         </Alert>
       )}
 
       <Card>
         <CardHeader>
-          <CardTitle>{t('settings.general.taskExecution.title')}</CardTitle>
-          <CardDescription>
-            {t('settings.general.taskExecution.description')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="executor">
-              {t('settings.general.taskExecution.executor.label')}
-            </Label>
-            <div className="grid grid-cols-2 gap-2">
-              <Select
-                value={executorDraft?.executor ?? ''}
-                onValueChange={(value: string) => {
-                  const variants = profiles?.[value];
-                  const keepCurrentVariant =
-                    variants &&
-                    executorDraft?.variant &&
-                    variants[executorDraft.variant];
-
-                  const newProfile: ExecutorProfileId = {
-                    executor: value as BaseCodingAgent,
-                    variant: keepCurrentVariant ? executorDraft!.variant : null,
-                  };
-                  updateExecutorDraft(newProfile);
-                }}
-                disabled={!profiles}
-              >
-                <SelectTrigger id="executor">
-                  <SelectValue
-                    placeholder={t(
-                      'settings.general.taskExecution.executor.placeholder'
-                    )}
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {profiles &&
-                    Object.entries(profiles)
-                      .sort((a, b) => a[0].localeCompare(b[0]))
-                      .map(([profileKey]) => (
-                        <SelectItem key={profileKey} value={profileKey}>
-                          {getAgentName(profileKey as BaseCodingAgent)}
-                        </SelectItem>
-                      ))}
-                </SelectContent>
-              </Select>
-
-              {/* Show variant selector if selected profile has variants */}
-              {(() => {
-                const currentProfileVariant = executorDraft;
-                const selectedProfile =
-                  profiles?.[currentProfileVariant?.executor || ''];
-                const hasVariants =
-                  selectedProfile && Object.keys(selectedProfile).length > 0;
-
-                if (hasVariants) {
-                  return (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="outline"
-                          className="w-full h-10 px-2 flex items-center justify-between"
-                        >
-                          <span className="text-sm truncate flex-1 text-left">
-                            {currentProfileVariant?.variant ||
-                              t('settings.general.taskExecution.defaultLabel')}
-                          </span>
-                          <ChevronDown className="h-4 w-4 ml-1 flex-shrink-0" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        {Object.entries(selectedProfile).map(
-                          ([variantLabel]) => (
-                            <DropdownMenuItem
-                              key={variantLabel}
-                              onClick={() => {
-                                const newProfile: ExecutorProfileId = {
-                                  executor: currentProfileVariant!.executor,
-                                  variant:
-                                    variantLabel === 'DEFAULT'
-                                      ? null
-                                      : variantLabel,
-                                };
-                                updateExecutorDraft(newProfile);
-                              }}
-                              className={
-                                (currentProfileVariant?.variant ??
-                                  'DEFAULT') === variantLabel
-                                  ? 'bg-accent'
-                                  : ''
-                              }
-                            >
-                              {variantLabel}
-                            </DropdownMenuItem>
-                          )
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  );
-                } else if (selectedProfile) {
-                  // Show disabled button when profile exists but has no variants
-                  return (
-                    <Button
-                      variant="outline"
-                      className="w-full h-10 px-2 flex items-center justify-between"
-                      disabled
-                    >
-                      <span className="text-sm truncate flex-1 text-left">
-                        {t('settings.general.taskExecution.defaultLabel')}
-                      </span>
-                    </Button>
-                  );
-                }
-                return null;
-              })()}
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1.5">
+              <CardTitle>{t('settings.agents.title')}</CardTitle>
+              <CardDescription>
+                {t('settings.agents.description')}
+              </CardDescription>
             </div>
-            <AgentAvailabilityIndicator availability={agentAvailability} />
-            <p className="text-sm text-muted-foreground">
-              {t('settings.general.taskExecution.executor.helper')}
-            </p>
-          </div>
-          <div className="flex justify-end">
-            <Button
-              onClick={handleSaveExecutorProfile}
-              disabled={!executorDirty || executorSaving}
+            <ToggleGroup
+              type="single"
+              value={editorMode}
+              onValueChange={handleModeChange}
+              className="inline-flex gap-1 rounded-md border p-1"
+              aria-label={t('settings.agents.editor.modeLabel')}
             >
-              {executorSaving && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              {t('common:buttons.save')}
-            </Button>
+              <ToggleGroupItem
+                value="form"
+                size="sm"
+                active={editorMode === 'form'}
+                aria-label={t('settings.agents.editor.formTab')}
+              >
+                {t('settings.agents.editor.formTab')}
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="json"
+                size="sm"
+                active={editorMode === 'json'}
+                aria-label={t('settings.agents.editor.jsonTab')}
+              >
+                {t('settings.agents.editor.jsonTab')}
+              </ToggleGroupItem>
+            </ToggleGroup>
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('settings.agents.title')}</CardTitle>
-          <CardDescription>{t('settings.agents.description')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Editor type toggle */}
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="use-form-editor"
-              checked={!useFormEditor}
-              onCheckedChange={(checked) => setUseFormEditor(!checked)}
-              disabled={profilesLoading || !localParsedProfiles}
-            />
-            <Label htmlFor="use-form-editor">
-              {t('settings.agents.editor.formLabel')}
-            </Label>
-          </div>
+          {editorMode === 'form' ? (
+            localParsedProfiles?.executors ? (
+              <>
+                <AgentConfigPicker
+                  executors={localParsedProfiles.executors}
+                  selectedExecutor={selectedExecutorType}
+                  selectedConfiguration={selectedConfiguration}
+                  defaultProfile={config?.executor_profile}
+                  disabled={profilesSaving}
+                  onSelectExecutor={handleSelectExecutor}
+                  onSelectConfiguration={setSelectedConfiguration}
+                  onCreateConfiguration={handleCreateConfiguration}
+                  onMakeDefault={handleMakeDefault}
+                  onDeleteConfiguration={handleDeleteConfiguration}
+                />
 
-          {useFormEditor &&
-          selectedExecutorType &&
-          localParsedProfiles &&
-          localParsedProfiles.executors ? (
-            // Form-based editor
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="executor-type">
-                    {t('settings.agents.editor.agentLabel')}
-                  </Label>
-                  <Select
-                    value={selectedExecutorType}
-                    onValueChange={(value) => {
-                      setSelectedExecutorType(value as BaseCodingAgent);
-                      // Reset configuration selection when executor type changes
-                      setSelectedConfiguration('DEFAULT');
-                    }}
-                  >
-                    <SelectTrigger id="executor-type">
-                      <SelectValue
-                        placeholder={t(
-                          'settings.agents.editor.agentPlaceholder'
-                        )}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.keys(localParsedProfiles.executors).map(
-                        (type) => (
-                          <SelectItem key={type} value={type}>
-                            {getAgentName(type as BaseCodingAgent)}
-                          </SelectItem>
-                        )
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="configuration">
-                    {t('settings.agents.editor.configLabel')}
-                  </Label>
-                  <div className="flex gap-2">
-                    <Select
-                      value={selectedConfiguration}
-                      onValueChange={(value) => {
-                        if (value === '__create__') {
-                          openCreateDialog();
-                        } else {
-                          setSelectedConfiguration(value);
-                        }
-                      }}
-                      disabled={
-                        !localParsedProfiles.executors[selectedExecutorType]
-                      }
-                    >
-                      <SelectTrigger id="configuration">
-                        <SelectValue
-                          placeholder={t(
-                            'settings.agents.editor.configPlaceholder'
-                          )}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Object.keys(
-                          localParsedProfiles.executors[selectedExecutorType] ||
-                            {}
-                        ).map((configuration) => (
-                          <SelectItem key={configuration} value={configuration}>
-                            {configuration}
-                          </SelectItem>
-                        ))}
-                        <SelectItem value="__create__">
-                          {t('settings.agents.editor.createNew')}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      className="h-10"
-                      onClick={() => openDeleteDialog(selectedConfiguration)}
-                      disabled={
-                        profilesSaving ||
-                        !localParsedProfiles.executors[selectedExecutorType] ||
-                        Object.keys(
-                          localParsedProfiles.executors[selectedExecutorType] ||
-                            {}
-                        ).length <= 1
-                      }
-                      title={
-                        Object.keys(
-                          localParsedProfiles.executors[selectedExecutorType] ||
-                            {}
-                        ).length <= 1
-                          ? t('settings.agents.editor.deleteTitle')
-                          : t('settings.agents.editor.deleteButton', {
-                              name: selectedConfiguration,
-                            })
-                      }
-                    >
-                      {t('settings.agents.editor.deleteText')}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              {(() => {
-                const executorsMap =
-                  localParsedProfiles.executors as unknown as ExecutorsMap;
-                return (
-                  !!executorsMap[selectedExecutorType]?.[
+                {selectedExecutorType &&
+                  selectedConfiguration &&
+                  !!executorsMap?.[selectedExecutorType]?.[
                     selectedConfiguration
                   ]?.[selectedExecutorType] && (
                     <ExecutorConfigForm
@@ -776,15 +492,11 @@ export function AgentSettings() {
                           formData
                         )
                       }
-                      onSave={handleExecutorConfigSave}
                       disabled={profilesSaving}
-                      isSaving={profilesSaving}
-                      isDirty={isDirty}
                     />
-                  )
-                );
-              })()}
-            </div>
+                  )}
+              </>
+            ) : null
           ) : (
             // Raw JSON editor
             <div className="space-y-4">
@@ -795,11 +507,7 @@ export function AgentSettings() {
                 <JSONEditor
                   id="profiles-editor"
                   placeholder={t('settings.agents.editor.jsonPlaceholder')}
-                  value={
-                    profilesLoading
-                      ? t('settings.agents.editor.jsonLoading')
-                      : localProfilesContent
-                  }
+                  value={localProfilesContent}
                   onChange={handleProfilesChange}
                   disabled={profilesLoading}
                   minHeight={300}
@@ -821,21 +529,41 @@ export function AgentSettings() {
         </CardContent>
       </Card>
 
-      {!useFormEditor && (
-        <div className="sticky bottom-0 z-10 bg-background/80 backdrop-blur-sm border-t py-4">
-          <div className="flex justify-end">
+      {/* Unified sticky save bar for both editor modes */}
+      <div className="sticky bottom-0 z-10 bg-background/80 backdrop-blur-sm border-t py-4">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">
+            {isDirty ? t('settings.agents.save.unsavedChanges') : ''}
+          </span>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={discardChanges}
+              disabled={!isDirty || profilesSaving}
+            >
+              {t('settings.agents.save.discard')}
+            </Button>
             <Button
               onClick={handleSaveProfiles}
-              disabled={!isDirty || profilesSaving || !!profilesError}
+              disabled={
+                !isDirty ||
+                profilesSaving ||
+                !!profilesError ||
+                justSaved ||
+                jsonInvalid
+              }
             >
               {profilesSaving && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
-              {t('settings.agents.save.button')}
+              {justSaved && <Check className="mr-2 h-4 w-4" />}
+              {justSaved
+                ? t('settings.agents.save.saved')
+                : t('settings.agents.save.button')}
             </Button>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

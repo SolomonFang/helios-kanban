@@ -1,5 +1,11 @@
 import { useEffect } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useParams,
+} from 'react-router-dom';
 import { I18nextProvider } from 'react-i18next';
 import i18n from '@/i18n';
 import { Projects } from '@/pages/Projects';
@@ -120,9 +126,18 @@ function AppContent() {
               path="/workspaces/*"
               element={<Navigate to="/local-projects" replace />}
             />
-            <Route path="/projects/:projectId/*" element={<RedirectProjectsToLocal />} />
-            <Route path="/projects/:projectId" element={<RedirectProjectsToLocal />} />
-            <Route path="/migrate" element={<Navigate to="/migration" replace />} />
+            <Route
+              path="/projects/:projectId/*"
+              element={<RedirectProjectsToLocal />}
+            />
+            <Route
+              path="/projects/:projectId"
+              element={<RedirectProjectsToLocal />}
+            />
+            <Route
+              path="/migrate"
+              element={<Navigate to="/migration" replace />}
+            />
 
             <Route
               path="/local-projects/:projectId/tasks/:taskId/attempts/:attemptId/full"

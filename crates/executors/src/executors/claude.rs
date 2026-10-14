@@ -67,11 +67,11 @@ fn base_command(claude_code_router: bool, native_binary: bool) -> &'static str {
 fn detect_claude_binary() -> bool {
     static DETECTED: OnceLock<bool> = OnceLock::new();
     *DETECTED.get_or_init(|| {
-        if let Ok(path) = std::env::var("VIBE_KANBAN_DISABLE_NATIVE_CLAUDE_DETECTION") {
-            if path == "1" || path.to_lowercase() == "true" {
-                tracing::info!("Native Claude binary detection disabled via VIBE_KANBAN_DISABLE_NATIVE_CLAUDE_DETECTION");
-                return false;
-            }
+        if let Ok(path) = std::env::var("VIBE_KANBAN_DISABLE_NATIVE_CLAUDE_DETECTION")
+            && (path == "1" || path.to_lowercase() == "true")
+        {
+            tracing::info!("Native Claude binary detection disabled via VIBE_KANBAN_DISABLE_NATIVE_CLAUDE_DETECTION");
+            return false;
         }
         let found = which::which("claude").is_ok();
         tracing::info!("Native Claude binary detection: {}", if found { "found" } else { "not found" });
@@ -545,13 +545,13 @@ impl ClaudeLogProcessor {
         worktree_path: &str,
         patches: &mut Vec<json_patch::Patch>,
     ) {
-        if let Some(status) = self.pending_status_updates.remove(tool_call_id) {
-            if !self.replace_tool_entry_status(tool_call_id, status, worktree_path, patches) {
-                tracing::error!(
-                    tool_call_id = %tool_call_id,
-                    "Failed to apply deferred tool status after tool_use registration"
-                );
-            }
+        if let Some(status) = self.pending_status_updates.remove(tool_call_id)
+            && !self.replace_tool_entry_status(tool_call_id, status, worktree_path, patches)
+        {
+            tracing::error!(
+                tool_call_id = %tool_call_id,
+                "Failed to apply deferred tool status after tool_use registration"
+            );
         }
     }
 
@@ -1120,7 +1120,7 @@ impl ClaudeLogProcessor {
                                     content: content_text,
                                 },
                             );
-                            self.flush_pending_status_for_tool(&id, worktree_path, &mut patches);
+                            self.flush_pending_status_for_tool(id, worktree_path, &mut patches);
                             let patch = if is_new {
                                 ConversationPatch::add_normalized_entry(id_num, entry)
                             } else {

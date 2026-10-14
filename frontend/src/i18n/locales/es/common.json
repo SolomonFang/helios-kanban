@@ -72,6 +72,21 @@
     "fixScript": "Corregir Script",
     "subagent": {
       "defaultType": "Subagente"
+    },
+    "question": {
+      "awaiting": "Esperando respuesta...",
+      "timedOut": "La pregunta ha expirado",
+      "answered": "{{count}} pregunta(s) respondida(s)",
+      "askUser": {
+        "title": "Pregunta al usuario",
+        "progress": "({{current}}/{{total}})",
+        "multiSelect": "Selección múltiple",
+        "confirmSelection": "Confirmar selección",
+        "other": "Otro:",
+        "customPlaceholder": "Escribe una respuesta personalizada y pulsa Enter...",
+        "submit": "Enviar",
+        "submitting": "Enviando..."
+      }
     }
   },
   "language": {

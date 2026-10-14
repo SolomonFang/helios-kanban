@@ -3,7 +3,9 @@ import { applyPatch, type Operation } from 'rfc6902';
 type EntriesContainer = { entries: unknown[] };
 
 function isEntriesContainer(target: object): target is EntriesContainer {
-  return 'entries' in target && Array.isArray((target as EntriesContainer).entries);
+  return (
+    'entries' in target && Array.isArray((target as EntriesContainer).entries)
+  );
 }
 
 function parseEntryIndex(path: string): number | null {

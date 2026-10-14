@@ -290,7 +290,10 @@
       "save": {
         "button": "保存代理配置",
         "success": "✓ 执行器配置保存成功！",
-        "unsavedChanges": "• 您有未保存的更改"
+        "unsavedChanges": "• 您有未保存的更改",
+        "discard": "放弃修改",
+        "saved": "✓ 已保存",
+        "confirmSwitchMode": "您有未保存的更改。切换编辑器将丢弃这些更改，是否继续？"
       },
       "availability": {
         "checking": "检查中...",
@@ -303,20 +306,17 @@
         "installationFoundTooltip": "找到代理配置。您可能需要登录才能使用它。"
       },
       "editor": {
-        "formLabel": "编辑 JSON",
         "agentLabel": "代理",
-        "agentPlaceholder": "选择执行器类型",
         "configLabel": "配置",
-        "configPlaceholder": "选择配置",
         "createNew": "新建...",
-        "deleteTitle": "无法删除最后一个配置",
-        "deleteButton": "删除 {{name}}",
         "deleteText": "删除",
         "makeDefault": "设为默认",
         "isDefault": "默认",
+        "modeLabel": "编辑器模式",
+        "formTab": "表单",
+        "jsonTab": "JSON",
         "jsonLabel": "代理配置（JSON）",
         "jsonPlaceholder": "加载配置文件中...",
-        "jsonLoading": "加载中...",
         "pathLabel": "配置文件位置：",
         "saveConfig": "保存配置"
       },
@@ -324,6 +324,7 @@
         "deleteFailed": "删除配置失败。请重试。",
         "saveFailed": "保存代理配置失败。请重试。",
         "saveConfigFailed": "保存配置失败。请重试。",
+        "invalidJson": "JSON 无效。请在保存前修正错误。",
         "schemaNotFound": "未找到执行器类型 {{executor}} 的架构"
       },
       "tree": {

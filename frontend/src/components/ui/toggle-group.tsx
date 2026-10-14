@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 const ToggleGroup = ToggleGroupPrimitive.Root;
 
 const toggleGroupItemVariants = cva(
-  'inline-flex h-4 w-4 items-center justify-center rounded-sm text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex items-center justify-center rounded-sm text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       active: {
@@ -14,9 +14,14 @@ const toggleGroupItemVariants = cva(
         false:
           'text-primary-foreground/70 hover:bg-accent hover:text-accent-foreground',
       },
+      size: {
+        icon: 'h-4 w-4',
+        sm: 'h-8 px-3 text-xs',
+      },
     },
     defaultVariants: {
       active: false,
+      size: 'icon',
     },
   }
 );
@@ -28,10 +33,10 @@ interface ToggleGroupItemProps
 const ToggleGroupItem = React.forwardRef<
   React.ElementRef<typeof ToggleGroupPrimitive.Item>,
   ToggleGroupItemProps
->(({ className, active, ...props }, ref) => (
+>(({ className, active, size, ...props }, ref) => (
   <ToggleGroupPrimitive.Item
     ref={ref}
-    className={cn(toggleGroupItemVariants({ active }), className)}
+    className={cn(toggleGroupItemVariants({ active, size }), className)}
     {...props}
   />
 ));

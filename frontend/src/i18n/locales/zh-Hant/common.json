@@ -61,6 +61,21 @@
     "fixScript": "修復腳本",
     "subagent": {
       "defaultType": "子代理"
+    },
+    "question": {
+      "awaiting": "等待回覆…",
+      "timedOut": "問題已逾時",
+      "answered": "已回答 {{count}} 個問題",
+      "askUser": {
+        "title": "向使用者提問",
+        "progress": "（{{current}}/{{total}}）",
+        "multiSelect": "可複選",
+        "confirmSelection": "確認選擇",
+        "other": "其他：",
+        "customPlaceholder": "輸入自訂答案後按 Enter…",
+        "submit": "提交",
+        "submitting": "提交中…"
+      }
     }
   },
   "folderPicker": {

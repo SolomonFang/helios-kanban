@@ -142,9 +142,7 @@ export function VirtualizedProcessLogs({
         data={data}
         context={context}
         computeItemKey={(_index, item) => item.key}
-        itemContent={(_index, item) => (
-          <LogRow item={item} context={context} />
-        )}
+        itemContent={(_index, item) => <LogRow item={item} context={context} />}
         atBottomStateChange={setAtBottom}
         followOutput={atBottom ? 'smooth' : false}
         // 加大下方视口，避免流式追加时频繁重新测量导致卡顿。

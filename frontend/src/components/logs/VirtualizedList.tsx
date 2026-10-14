@@ -159,7 +159,9 @@ const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
           data={data}
           context={messageListContext}
           computeItemKey={(_index, item) => `l-${item.patchKey}`}
-          itemContent={(_index, item) => <ItemRow item={item} context={messageListContext} />}
+          itemContent={(_index, item) => (
+            <ItemRow item={item} context={messageListContext} />
+          )}
           atBottomStateChange={setAtBottom}
           followOutput={atBottom ? 'smooth' : false}
           components={{

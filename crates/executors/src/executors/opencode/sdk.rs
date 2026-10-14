@@ -288,6 +288,7 @@ pub async fn run_session(
 
 /// Send a follow-up commit reminder into the active OpenCode session when the
 /// feature is enabled and the workspace still has uncommitted changes.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn maybe_send_commit_reminder(
     client: &reqwest::Client,
     config: &RunConfig,
@@ -1729,6 +1730,7 @@ fn event_matches_session(event_type: &str, event: &Value, session_id: &str) -> b
     extracted == Some(session_id)
 }
 
+#[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod tests {
     use serde_json::json;

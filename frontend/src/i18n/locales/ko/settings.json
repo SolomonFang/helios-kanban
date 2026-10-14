@@ -290,7 +290,10 @@
       "save": {
         "button": "에이전트 구성 저장",
         "success": "✓ 실행자 구성이 성공적으로 저장되었습니다!",
-        "unsavedChanges": "• 저장되지 않은 변경 사항이 있습니다"
+        "unsavedChanges": "• 저장되지 않은 변경 사항이 있습니다",
+        "discard": "변경 사항 버리기",
+        "saved": "✓ 저장됨",
+        "confirmSwitchMode": "저장되지 않은 변경 사항이 있습니다. 편집기를 전환하면 변경 사항이 삭제됩니다. 계속하시겠습니까?"
       },
       "availability": {
         "checking": "확인 중...",
@@ -303,20 +306,17 @@
         "installationFoundTooltip": "에이전트 구성이 발견되었습니다. 사용하려면 로그인해야 할 수 있습니다."
       },
       "editor": {
-        "formLabel": "JSON 편집",
         "agentLabel": "에이전트",
-        "agentPlaceholder": "실행자 유형 선택",
         "configLabel": "구성",
-        "configPlaceholder": "구성 선택",
         "createNew": "새로 만들기...",
-        "deleteTitle": "마지막 구성은 삭제할 수 없습니다",
-        "deleteButton": "{{name}} 삭제",
         "deleteText": "삭제",
         "makeDefault": "기본값으로 설정",
         "isDefault": "기본값",
+        "modeLabel": "편집기 모드",
+        "formTab": "폼",
+        "jsonTab": "JSON",
         "jsonLabel": "에이전트 구성 (JSON)",
         "jsonPlaceholder": "프로필 로딩 중...",
-        "jsonLoading": "로딩 중...",
         "pathLabel": "구성 파일 위치:",
         "saveConfig": "구성 저장"
       },
@@ -324,6 +324,7 @@
         "deleteFailed": "구성을 삭제하지 못했습니다. 다시 시도해 주세요.",
         "saveFailed": "에이전트 구성을 저장하지 못했습니다. 다시 시도해 주세요.",
         "saveConfigFailed": "구성을 저장하지 못했습니다. 다시 시도해 주세요.",
+        "invalidJson": "JSON이 올바르지 않습니다. 저장하기 전에 오류를 수정하세요.",
         "schemaNotFound": "실행자 유형 {{executor}}에 대한 스키마를 찾을 수 없습니다"
       },
       "tree": {
@@ -482,7 +483,11 @@
           "label": "설정 스크립트",
           "helper": "이 스크립트는 워크트리 내부에서 생성 후 코딩 에이전트가 시작되기 전에 실행됩니다. 종속성 설치 또는 환경 준비와 같은 설정 작업에 사용하세요.",
           "parallelLabel": "설정 스크립트를 코딩 에이전트와 병렬로 실행",
-          "parallelHelper": "활성화되면 설정 스크립트가 설정 완료를 기다리지 않고 코딩 에이전트와 동시에 실행됩니다."
+          "parallelHelper": "활성화되면 설정 스크립트가 설정 완료를 기다리지 않고 코딩 에이전트와 동시에 실행됩니다.",
+          "autoCommitLabel": "변경 사항 자동 커밋",
+          "autoCommitHelper": "활성화하면 코딩 또는 정리 실행이 성공할 때 이 리포지토리의 변경 사항을 자동으로 커밋할 수 있습니다. 비활성화하면 항상 수동으로 커밋합니다.",
+          "useWorktreeLabel": "Git Worktree 사용",
+          "useWorktreeHelper": "활성화하면 새 워크스페이스가 격리된 임시 디렉토리에서 git worktree를 사용합니다. 비활성화하면 코딩 에이전트가 원래 리포지토리에서 직접 작업합니다."
         },
         "cleanup": {
           "label": "정리 스크립트",

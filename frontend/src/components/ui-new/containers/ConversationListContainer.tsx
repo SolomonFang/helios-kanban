@@ -78,7 +78,7 @@ export const ConversationList = forwardRef<
     entries: PatchTypeWithKey[];
     addType: AddEntryType;
     loading: boolean;
-    tokenUsage?: TokenUsageInfo | null;
+    tokenUsage: TokenUsageInfo | null | undefined;
   } | null>(null);
   // rAF throttle: 100ms debounce never fires during continuous streaming because
   // each WS patch resets the timer (~16ms with upstream-style rAF batching).

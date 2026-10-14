@@ -436,9 +436,7 @@ export function ProjectSettings() {
                 <Textarea
                   id="project-description"
                   value={draft.description}
-                  onChange={(e) =>
-                    updateDraft({ description: e.target.value })
-                  }
+                  onChange={(e) => updateDraft({ description: e.target.value })}
                   placeholder={t(
                     'settings.projects.general.projectDescription.placeholder'
                   )}

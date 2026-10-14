@@ -64,42 +64,43 @@ export const useConversationHistoryOld = ({
     );
   }, [executionProcessesRaw]);
 
-  const loadEntriesForHistoricExecutionProcess = (
-    executionProcess: ExecutionProcess
-  ) => {
-    let url = '';
-    if (executionProcess.executor_action.typ.type === 'ScriptRequest') {
-      url = `/api/execution-processes/${executionProcess.id}/raw-logs/ws`;
-    } else {
-      url = `/api/execution-processes/${executionProcess.id}/normalized-logs/ws`;
-    }
+  const loadEntriesForHistoricExecutionProcess = useCallback(
+    (executionProcess: ExecutionProcess) => {
+      let url = '';
+      if (executionProcess.executor_action.typ.type === 'ScriptRequest') {
+        url = `/api/execution-processes/${executionProcess.id}/raw-logs/ws`;
+      } else {
+        url = `/api/execution-processes/${executionProcess.id}/normalized-logs/ws`;
+      }
 
-    return new Promise<PatchType[]>((resolve) => {
-      const controller = streamJsonPatchEntries<PatchType>(url, {
-        onTokenUsage: (info) => {
-          latestTokenUsageRef.current = info;
-          setTokenUsageInfo(info);
-        },
-        onFinished: (allEntries) => {
-          const tokenFromSnapshot = extractTokenUsageFromEntries(allEntries);
-          if (tokenFromSnapshot) {
-            latestTokenUsageRef.current = tokenFromSnapshot;
-            setTokenUsageInfo(tokenFromSnapshot);
-          }
-          controller.close();
-          resolve(allEntries);
-        },
-        onError: (err) => {
-          console.warn(
-            `Error loading entries for historic execution process ${executionProcess.id}`,
-            err
-          );
-          controller.close();
-          resolve([]);
-        },
+      return new Promise<PatchType[]>((resolve) => {
+        const controller = streamJsonPatchEntries<PatchType>(url, {
+          onTokenUsage: (info) => {
+            latestTokenUsageRef.current = info;
+            setTokenUsageInfo(info);
+          },
+          onFinished: (allEntries) => {
+            const tokenFromSnapshot = extractTokenUsageFromEntries(allEntries);
+            if (tokenFromSnapshot) {
+              latestTokenUsageRef.current = tokenFromSnapshot;
+              setTokenUsageInfo(tokenFromSnapshot);
+            }
+            controller.close();
+            resolve(allEntries);
+          },
+          onError: (err) => {
+            console.warn(
+              `Error loading entries for historic execution process ${executionProcess.id}`,
+              err
+            );
+            controller.close();
+            resolve([]);
+          },
+        });
       });
-    });
-  };
+    },
+    [setTokenUsageInfo]
+  );
 
   const getLiveExecutionProcess = (
     executionProcessId: string
@@ -515,7 +516,7 @@ export const useConversationHistoryOld = ({
       }
 
       return localDisplayedExecutionProcesses;
-    }, [executionProcesses]);
+    }, [executionProcesses, loadEntriesForHistoricExecutionProcess]);
 
   const loadRemainingEntriesInBatches = useCallback(
     async (batchSize: number): Promise<boolean> => {
@@ -555,7 +556,7 @@ export const useConversationHistoryOld = ({
       }
       return anyUpdated;
     },
-    [executionProcesses]
+    [executionProcesses, loadEntriesForHistoricExecutionProcess]
   );
 
   const ensureProcessVisible = useCallback((p: ExecutionProcess) => {

@@ -21,7 +21,7 @@ pub fn normalize_stdout_logs(msg_store: Arc<MsgStore>, entry_index_provider: Ent
                 timestamp: None,
                 entry_type: NormalizedEntryType::AssistantMessage,
                 // PTY output via `script` uses \r\n; strip \r
-                content: strip_ansi_escapes::strip_str(&content.replace('\r', "")),
+                content: strip_ansi_escapes::strip_str(content.replace('\r', "")),
                 metadata: None,
             }))
             .time_gap(Duration::from_secs(2))

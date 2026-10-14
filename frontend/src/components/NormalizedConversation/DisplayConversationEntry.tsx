@@ -723,6 +723,10 @@ function DisplayConversationEntry({
   const { isProcessGreyed } = useRetryUi();
   const greyed = isProcessGreyed(executionProcessId);
 
+  const bannerRef = useRef<AskUserQuestionBannerHandle>(null);
+  const [isAnswerSubmitting, setIsAnswerSubmitting] = useState(false);
+  const [answerError, setAnswerError] = useState<string | null>(null);
+
   if (isProcessStart(entry)) {
     return (
       <div className={greyed ? 'opacity-50 pointer-events-none' : undefined}>
@@ -801,10 +805,6 @@ function DisplayConversationEntry({
       </div>
     );
   }
-
-  const bannerRef = useRef<AskUserQuestionBannerHandle>(null);
-  const [isAnswerSubmitting, setIsAnswerSubmitting] = useState(false);
-  const [answerError, setAnswerError] = useState<string | null>(null);
 
   const renderToolUse = () => {
     if (!isNormalizedEntry(entry)) return null;

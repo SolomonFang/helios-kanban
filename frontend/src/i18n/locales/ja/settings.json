@@ -290,7 +290,10 @@
       "save": {
         "button": "エージェント設定を保存",
         "success": "✓ 実行設定が正常に保存されました！",
-        "unsavedChanges": "• 未保存の変更があります"
+        "unsavedChanges": "• 未保存の変更があります",
+        "discard": "破棄",
+        "saved": "✓ 保存しました",
+        "confirmSwitchMode": "未保存の変更があります。エディターを切り替えると変更は破棄されます。続行しますか？"
       },
       "availability": {
         "checking": "確認中...",
@@ -303,20 +306,17 @@
         "installationFoundTooltip": "エージェント設定が見つかりました。使用するにはログインが必要な場合があります。"
       },
       "editor": {
-        "formLabel": "JSONを編集",
         "agentLabel": "エージェント",
-        "agentPlaceholder": "実行タイプを選択",
         "configLabel": "設定",
-        "configPlaceholder": "設定を選択",
         "createNew": "新規作成...",
-        "deleteTitle": "最後の設定は削除できません",
-        "deleteButton": "{{name}}を削除",
         "deleteText": "削除",
         "makeDefault": "デフォルトに設定",
         "isDefault": "デフォルト",
+        "modeLabel": "エディターモード",
+        "formTab": "フォーム",
+        "jsonTab": "JSON",
         "jsonLabel": "エージェント設定（JSON）",
         "jsonPlaceholder": "プロファイルを読み込み中...",
-        "jsonLoading": "読み込み中...",
         "pathLabel": "設定ファイルの場所：",
         "saveConfig": "設定を保存"
       },
@@ -324,6 +324,7 @@
         "deleteFailed": "設定の削除に失敗しました。もう一度お試しください。",
         "saveFailed": "エージェント設定の保存に失敗しました。もう一度お試しください。",
         "saveConfigFailed": "設定の保存に失敗しました。もう一度お試しください。",
+        "invalidJson": "JSONが無効です。保存する前にエラーを修正してください。",
         "schemaNotFound": "実行タイプ {{executor}} のスキーマが見つかりません"
       },
       "tree": {
@@ -482,7 +483,11 @@
           "label": "セットアップスクリプト",
           "helper": "このスクリプトはワークツリー内から、作成後かつコーディングエージェントの開始前に実行されます。依存関係のインストールや環境の準備などのセットアップタスクに使用してください。",
           "parallelLabel": "セットアップスクリプトをコーディングエージェントと並行して実行",
-          "parallelHelper": "有効にすると、セットアップスクリプトはセットアップの完了を待たずに、コーディングエージェントと同時に実行されます。"
+          "parallelHelper": "有効にすると、セットアップスクリプトはセットアップの完了を待たずに、コーディングエージェントと同時に実行されます。",
+          "autoCommitLabel": "変更を自動コミット",
+          "autoCommitHelper": "有効にすると、コーディングまたはクリーンアップの実行が成功した際に、このリポジトリの変更を自動的にコミットできます。無効にすると、常に手動でコミットします。",
+          "useWorktreeLabel": "Git Worktree を使用",
+          "useWorktreeHelper": "有効にすると、新しいワークスペースは分離された一時ディレクトリで git worktree を使用します。無効にすると、コーディングエージェントは元のリポジトリで直接作業します。"
         },
         "cleanup": {
           "label": "クリーンアップスクリプト",

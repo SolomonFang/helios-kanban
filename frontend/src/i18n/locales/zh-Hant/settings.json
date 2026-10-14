@@ -290,7 +290,10 @@
       "save": {
         "button": "儲存代理設定",
         "success": "✓ 執行器設定儲存成功！",
-        "unsavedChanges": "• 您有未儲存的變更"
+        "unsavedChanges": "• 您有未儲存的變更",
+        "discard": "放棄修改",
+        "saved": "✓ 已儲存",
+        "confirmSwitchMode": "您有未儲存的變更。切換編輯器將捨棄這些變更，是否繼續？"
       },
       "availability": {
         "checking": "檢查中...",
@@ -303,20 +306,17 @@
         "installationFoundTooltip": "找到代理設定。您可能需要登入才能使用。"
       },
       "editor": {
-        "formLabel": "編輯 JSON",
         "agentLabel": "代理",
-        "agentPlaceholder": "選擇執行器類型",
         "configLabel": "設定",
-        "configPlaceholder": "選擇設定",
         "createNew": "新建...",
-        "deleteTitle": "無法刪除最後一個設定",
-        "deleteButton": "刪除 {{name}}",
         "deleteText": "刪除",
         "makeDefault": "設為預設",
         "isDefault": "預設",
+        "modeLabel": "編輯器模式",
+        "formTab": "表單",
+        "jsonTab": "JSON",
         "jsonLabel": "代理設定（JSON）",
         "jsonPlaceholder": "載入設定檔中...",
-        "jsonLoading": "載入中...",
         "pathLabel": "設定檔位置：",
         "saveConfig": "儲存配置"
       },
@@ -324,6 +324,7 @@
         "deleteFailed": "刪除設定失敗。請重試。",
         "saveFailed": "儲存代理設定失敗。請重試。",
         "saveConfigFailed": "儲存設定失敗。請重試。",
+        "invalidJson": "JSON 無效。請在儲存前修正錯誤。",
         "schemaNotFound": "找不到執行器類型 {{executor}} 的結構描述"
       },
       "tree": {
@@ -482,7 +483,11 @@
           "label": "設定腳本",
           "helper": "此腳本在工作樹內執行，於建立後、編碼代理啟動前執行。用於安裝相依套件或準備環境等設定工作。",
           "parallelLabel": "與編碼代理平行執行設定腳本",
-          "parallelHelper": "啟用後，設定腳本將與編碼代理同時執行，而不是等待設定完成後再啟動。"
+          "parallelHelper": "啟用後，設定腳本將與編碼代理同時執行，而不是等待設定完成後再啟動。",
+          "autoCommitLabel": "自動提交變更",
+          "autoCommitHelper": "啟用後，此倉庫在編碼代理或清理腳本成功執行後可能自動提交變更。停用後將始終由您手動提交。",
+          "useWorktreeLabel": "使用 Git Worktree",
+          "useWorktreeHelper": "啟用後，新工作空間將使用 git worktree 在隔離的暫存目錄中工作。停用後，編碼代理直接在原始倉庫中操作。"
         },
         "cleanup": {
           "label": "清理腳本",

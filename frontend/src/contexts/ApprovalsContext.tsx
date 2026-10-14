@@ -149,13 +149,7 @@ export function ApprovalsProvider({ children }: { children: ReactNode }) {
       isConnected,
       error,
     }),
-    [
-      pendingApprovals,
-      getPendingForProcess,
-      getPendingById,
-      isConnected,
-      error,
-    ]
+    [pendingApprovals, getPendingForProcess, getPendingById, isConnected, error]
   );
 
   return (

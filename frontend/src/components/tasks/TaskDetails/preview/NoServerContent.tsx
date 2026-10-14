@@ -155,7 +155,7 @@ export function NoServerContent({
               {t('preview.noServer.companionPrompt')}
             </p>
             <div className="space-y-2">
-            <Button
+              <Button
                 size="sm"
                 onClick={handleInstallCompanion}
                 disabled={!project || !config || createAndStart.isPending}

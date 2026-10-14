@@ -701,7 +701,7 @@ pub trait ContainerService {
                 }
             };
 
-            let worktree_path = self.repo_work_dir(&workspace_dir, &repo);
+            let worktree_path = self.repo_work_dir(&workspace_dir, repo);
             if let Some(oid) = target_oid {
                 let outcome = self.git().reconcile_worktree_to_commit(
                     &worktree_path,
@@ -1272,7 +1272,7 @@ pub trait ContainerService {
 
         let mut repo_states = Vec::with_capacity(repositories.len());
         for repo in &repositories {
-            let repo_path = self.repo_work_dir(&workspace_root, &repo);
+            let repo_path = self.repo_work_dir(&workspace_root, repo);
             let before_head_commit = self.git().get_head_info(&repo_path).ok().map(|h| h.oid);
             repo_states.push(CreateExecutionProcessRepoState {
                 repo_id: repo.id,

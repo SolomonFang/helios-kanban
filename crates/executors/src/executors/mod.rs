@@ -368,7 +368,7 @@ fn pty_exit_to_std(es: portable_pty::ExitStatus) -> std::process::ExitStatus {
 impl ChildHandle {
     pub fn try_wait(&mut self) -> io::Result<Option<std::process::ExitStatus>> {
         match self {
-            ChildHandle::Group(child) => child.try_wait().map_err(|e| io::Error::other(e)),
+            ChildHandle::Group(child) => child.try_wait().map_err(io::Error::other),
             ChildHandle::Pty { child, .. } => child.try_wait().map(|opt| opt.map(pty_exit_to_std)),
         }
     }
@@ -389,7 +389,7 @@ impl ChildHandle {
 
     pub async fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
         match self {
-            ChildHandle::Group(child) => child.wait().await.map_err(|e| io::Error::other(e)),
+            ChildHandle::Group(child) => child.wait().await.map_err(io::Error::other),
             ChildHandle::Pty { child, .. } => child.wait().map(pty_exit_to_std),
         }
     }

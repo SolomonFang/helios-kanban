@@ -290,7 +290,10 @@
       "save": {
         "button": "Enregistrer les configurations d'agents",
         "success": "✓ Configurations d'exécuteurs enregistrées avec succès !",
-        "unsavedChanges": "• Vous avez des modifications non enregistrées"
+        "unsavedChanges": "• Vous avez des modifications non enregistrées",
+        "discard": "Abandonner",
+        "saved": "✓ Enregistré",
+        "confirmSwitchMode": "Vous avez des modifications non enregistrées. Changer d'éditeur les abandonnera. Continuer ?"
       },
       "availability": {
         "checking": "Vérification...",
@@ -303,20 +306,17 @@
         "installationFoundTooltip": "Configuration d'agent trouvée. Vous devrez peut-être vous connecter pour l'utiliser."
       },
       "editor": {
-        "formLabel": "Modifier le JSON",
         "agentLabel": "Agent",
-        "agentPlaceholder": "Sélectionner le type d'exécuteur",
         "configLabel": "Configuration",
-        "configPlaceholder": "Sélectionner une configuration",
         "createNew": "Créer une nouvelle...",
-        "deleteTitle": "Impossible de supprimer la dernière configuration",
-        "deleteButton": "Supprimer {{name}}",
         "deleteText": "Supprimer",
         "makeDefault": "Définir par défaut",
         "isDefault": "Par défaut",
+        "modeLabel": "Mode d'édition",
+        "formTab": "Formulaire",
+        "jsonTab": "JSON",
         "jsonLabel": "Configuration de l'agent (JSON)",
         "jsonPlaceholder": "Chargement des profils...",
-        "jsonLoading": "Chargement...",
         "pathLabel": "Emplacement du fichier de configuration :",
         "saveConfig": "Enregistrer la configuration"
       },
@@ -324,6 +324,7 @@
         "deleteFailed": "Échec de la suppression de la configuration. Veuillez réessayer.",
         "saveFailed": "Échec de l'enregistrement des configurations d'agents. Veuillez réessayer.",
         "saveConfigFailed": "Échec de l'enregistrement de la configuration. Veuillez réessayer.",
+        "invalidJson": "JSON invalide. Corrigez les erreurs avant d'enregistrer.",
         "schemaNotFound": "Schéma non trouvé pour le type d'exécuteur : {{executor}}"
       },
       "tree": {
@@ -482,7 +483,11 @@
           "label": "Script de configuration",
           "helper": "Ce script s'exécute depuis le worktree après sa création et avant le démarrage de l'agent de codage. Utilisez-le pour les tâches de configuration comme l'installation des dépendances ou la préparation de l'environnement.",
           "parallelLabel": "Exécuter le script de configuration en parallèle avec l'agent de codage",
-          "parallelHelper": "Lorsque activé, le script de configuration s'exécute simultanément avec l'agent de codage au lieu d'attendre la fin de la configuration."
+          "parallelHelper": "Lorsque activé, le script de configuration s'exécute simultanément avec l'agent de codage au lieu d'attendre la fin de la configuration.",
+          "autoCommitLabel": "Valider automatiquement les modifications",
+          "autoCommitHelper": "Lorsque cette option est activée, les exécutions de codage ou de nettoyage réussies peuvent valider automatiquement les modifications de ce dépôt. Désactivez-la pour toujours valider manuellement.",
+          "useWorktreeLabel": "Utiliser Git Worktree",
+          "useWorktreeHelper": "Lorsque cette option est activée, les nouveaux espaces de travail utiliseront des git worktrees dans un répertoire temporaire isolé. Sinon, l'agent de codage travaille directement dans le dépôt original."
         },
         "cleanup": {
           "label": "Script de nettoyage",

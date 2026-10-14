@@ -174,103 +174,103 @@ function WorkspaceSessionPanel({
       sessionId={selectedSessionId}
     >
       <ApprovalsProvider>
-      <ApprovalFeedbackProvider>
-        <EntriesProvider key={`${workspaceId}-${selectedSessionId ?? 'new'}`}>
-          <MessageEditProvider>
-            <div className="relative flex h-full flex-1 flex-col bg-primary">
-              <div className="flex items-center justify-between px-base py-half border-b shrink-0">
-                <div className="flex items-center gap-half min-w-0 font-ibm-plex-mono">
-                  <button
-                    type="button"
-                    onClick={handleOpenIssuePanel}
-                    className={`${breadcrumbButtonClass} shrink-0`}
-                    aria-label="Open linked issue"
-                  >
-                    {issueSimpleId ?? 'Issue'}
-                  </button>
-                  <span className="text-low text-sm shrink-0">/</span>
-                  <button
-                    type="button"
-                    onClick={handleOpenWorkspaceView}
-                    className={breadcrumbButtonClass}
-                    aria-label="Open workspace"
-                  >
-                    {workspaceBranch ?? 'Workspace'}
-                  </button>
-                </div>
+        <ApprovalFeedbackProvider>
+          <EntriesProvider key={`${workspaceId}-${selectedSessionId ?? 'new'}`}>
+            <MessageEditProvider>
+              <div className="relative flex h-full flex-1 flex-col bg-primary">
+                <div className="flex items-center justify-between px-base py-half border-b shrink-0">
+                  <div className="flex items-center gap-half min-w-0 font-ibm-plex-mono">
+                    <button
+                      type="button"
+                      onClick={handleOpenIssuePanel}
+                      className={`${breadcrumbButtonClass} shrink-0`}
+                      aria-label="Open linked issue"
+                    >
+                      {issueSimpleId ?? 'Issue'}
+                    </button>
+                    <span className="text-low text-sm shrink-0">/</span>
+                    <button
+                      type="button"
+                      onClick={handleOpenWorkspaceView}
+                      className={breadcrumbButtonClass}
+                      aria-label="Open workspace"
+                    >
+                      {workspaceBranch ?? 'Workspace'}
+                    </button>
+                  </div>
 
-                <div className="flex items-center gap-half">
-                  <button
-                    type="button"
-                    onClick={handleOpenWorkspaceView}
-                    className="p-half rounded-sm text-low hover:text-normal hover:bg-panel transition-colors"
-                    aria-label="Open in workspace view"
-                  >
-                    <ArrowsOutIcon className="size-icon-sm" weight="bold" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="p-half rounded-sm text-low hover:text-normal hover:bg-panel transition-colors"
-                    aria-label="Close conversation view"
-                  >
-                    <XIcon className="size-icon-sm" weight="bold" />
-                  </button>
-                </div>
-              </div>
-
-              {workspaceWithSession ? (
-                <div className="flex flex-1 min-h-0 overflow-hidden justify-center">
-                  <div className="w-chat max-w-full h-full">
-                    <RetryUiProvider attemptId={workspaceWithSession.id}>
-                      <ConversationList
-                        ref={conversationListRef}
-                        attempt={workspaceWithSession}
-                      />
-                    </RetryUiProvider>
+                  <div className="flex items-center gap-half">
+                    <button
+                      type="button"
+                      onClick={handleOpenWorkspaceView}
+                      className="p-half rounded-sm text-low hover:text-normal hover:bg-panel transition-colors"
+                      aria-label="Open in workspace view"
+                    >
+                      <ArrowsOutIcon className="size-icon-sm" weight="bold" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="p-half rounded-sm text-low hover:text-normal hover:bg-panel transition-colors"
+                      aria-label="Close conversation view"
+                    >
+                      <XIcon className="size-icon-sm" weight="bold" />
+                    </button>
                   </div>
                 </div>
-              ) : (
-                <div className="flex-1" />
-              )}
 
-              <div className="flex justify-center @container pl-px">
-                <SessionChatBoxContainer
-                  {...(isSessionsLoading || isWorkspaceLoading
-                    ? {
-                        mode: 'placeholder' as const,
-                      }
-                    : isNewSessionMode
+                {workspaceWithSession ? (
+                  <div className="flex flex-1 min-h-0 overflow-hidden justify-center">
+                    <div className="w-chat max-w-full h-full">
+                      <RetryUiProvider attemptId={workspaceWithSession.id}>
+                        <ConversationList
+                          ref={conversationListRef}
+                          attempt={workspaceWithSession}
+                        />
+                      </RetryUiProvider>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1" />
+                )}
+
+                <div className="flex justify-center @container pl-px">
+                  <SessionChatBoxContainer
+                    {...(isSessionsLoading || isWorkspaceLoading
                       ? {
-                          mode: 'new-session' as const,
-                          workspaceId,
-                          onSelectSession: selectSession,
+                          mode: 'placeholder' as const,
                         }
-                      : selectedSession
+                      : isNewSessionMode
                         ? {
-                            mode: 'existing-session' as const,
-                            session: selectedSession,
+                            mode: 'new-session' as const,
+                            workspaceId,
                             onSelectSession: selectSession,
-                            onStartNewSession: startNewSession,
                           }
-                        : {
-                            mode: 'placeholder' as const,
-                          })}
-                  sessions={sessions}
-                  projectId={projectId}
-                  filesChanged={workspaceSummary?.filesChanged ?? 0}
-                  linesAdded={workspaceSummary?.linesAdded ?? 0}
-                  linesRemoved={workspaceSummary?.linesRemoved ?? 0}
-                  disableViewCode
-                  showOpenWorkspaceButton
-                  onScrollToPreviousMessage={handleScrollToPreviousMessage}
-                  onScrollToBottom={handleScrollToBottom}
-                />
+                        : selectedSession
+                          ? {
+                              mode: 'existing-session' as const,
+                              session: selectedSession,
+                              onSelectSession: selectSession,
+                              onStartNewSession: startNewSession,
+                            }
+                          : {
+                              mode: 'placeholder' as const,
+                            })}
+                    sessions={sessions}
+                    projectId={projectId}
+                    filesChanged={workspaceSummary?.filesChanged ?? 0}
+                    linesAdded={workspaceSummary?.linesAdded ?? 0}
+                    linesRemoved={workspaceSummary?.linesRemoved ?? 0}
+                    disableViewCode
+                    showOpenWorkspaceButton
+                    onScrollToPreviousMessage={handleScrollToPreviousMessage}
+                    onScrollToBottom={handleScrollToBottom}
+                  />
+                </div>
               </div>
-            </div>
-          </MessageEditProvider>
-        </EntriesProvider>
-      </ApprovalFeedbackProvider>
+            </MessageEditProvider>
+          </EntriesProvider>
+        </ApprovalFeedbackProvider>
       </ApprovalsProvider>
     </ExecutionProcessesProvider>
   );

@@ -290,7 +290,10 @@
       "save": {
         "button": "Save Agent Configurations",
         "success": "✓ Executor configurations saved successfully!",
-        "unsavedChanges": "• You have unsaved changes"
+        "unsavedChanges": "• You have unsaved changes",
+        "discard": "Discard",
+        "saved": "✓ Saved",
+        "confirmSwitchMode": "You have unsaved changes. Switching editors will discard them. Continue?"
       },
       "availability": {
         "checking": "Checking...",
@@ -303,20 +306,17 @@
         "installationFoundTooltip": "Agent configuration found. You may need to log in to use it."
       },
       "editor": {
-        "formLabel": "Edit JSON",
         "agentLabel": "Agent",
-        "agentPlaceholder": "Select executor type",
         "configLabel": "Configuration",
-        "configPlaceholder": "Select configuration",
         "createNew": "Create new...",
-        "deleteTitle": "Cannot delete the last configuration",
-        "deleteButton": "Delete {{name}}",
         "deleteText": "Delete",
         "makeDefault": "Make Default",
         "isDefault": "Default",
+        "modeLabel": "Editor mode",
+        "formTab": "Form",
+        "jsonTab": "JSON",
         "jsonLabel": "Agent Configuration (JSON)",
         "jsonPlaceholder": "Loading profiles...",
-        "jsonLoading": "Loading...",
         "pathLabel": "Configuration file location:",
         "saveConfig": "Save Configuration"
       },
@@ -324,6 +324,7 @@
         "deleteFailed": "Failed to delete configuration. Please try again.",
         "saveFailed": "Failed to save agent configurations. Please try again.",
         "saveConfigFailed": "Failed to save configuration. Please try again.",
+        "invalidJson": "Invalid JSON. Fix the errors before saving.",
         "schemaNotFound": "Schema not found for executor type: {{executor}}"
       },
       "tree": {

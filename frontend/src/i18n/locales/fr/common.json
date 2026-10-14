@@ -61,6 +61,21 @@
     "fixScript": "Corriger le script",
     "subagent": {
       "defaultType": "Sous-agent"
+    },
+    "question": {
+      "awaiting": "En attente de réponse...",
+      "timedOut": "La question a expiré",
+      "answered": "{{count}} question(s) répondue(s)",
+      "askUser": {
+        "title": "Question à l'utilisateur",
+        "progress": "({{current}}/{{total}})",
+        "multiSelect": "Sélection multiple",
+        "confirmSelection": "Confirmer la sélection",
+        "other": "Autre :",
+        "customPlaceholder": "Saisissez une réponse personnalisée et appuyez sur Entrée...",
+        "submit": "Envoyer",
+        "submitting": "Envoi en cours..."
+      }
     }
   },
   "folderPicker": {

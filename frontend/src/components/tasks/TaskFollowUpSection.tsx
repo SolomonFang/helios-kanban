@@ -337,11 +337,7 @@ export function TaskFollowUpSection({
   const { pendingApprovals } = useApprovals();
   const runningProcessIds = useMemo(
     () =>
-      new Set(
-        processes
-          .filter((p) => p.status === 'running')
-          .map((p) => p.id)
-      ),
+      new Set(processes.filter((p) => p.status === 'running').map((p) => p.id)),
     [processes]
   );
   const hasPendingApproval = useMemo(() => {

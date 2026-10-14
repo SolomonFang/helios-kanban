@@ -42,10 +42,10 @@ fn base_command(native_binary: bool) -> &'static str {
 fn detect_reasonix_binary() -> bool {
     static DETECTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *DETECTED.get_or_init(|| {
-        if let Ok(val) = std::env::var("VIBE_KANBAN_DISABLE_NATIVE_REASONIX_DETECTION") {
-            if val == "1" || val.to_lowercase() == "true" {
-                return false;
-            }
+        if let Ok(val) = std::env::var("VIBE_KANBAN_DISABLE_NATIVE_REASONIX_DETECTION")
+            && (val == "1" || val.to_lowercase() == "true")
+        {
+            return false;
         }
         which::which("reasonix").is_ok()
     })
@@ -177,14 +177,14 @@ async fn spawn_reasonix(
 
     let mut child = command.group_spawn()?;
 
-    if let Some(prompt_text) = prompt {
-        if let Some(mut stdin) = child.inner().stdin.take() {
-            stdin.write_all(prompt_text.as_bytes()).await?;
-            stdin.write_all(b"\n").await?;
-            stdin.flush().await?;
-            // Don't shutdown — keep stdin open so reasonix can continue
-            // reading from the PTY during its session
-        }
+    if let Some(prompt_text) = prompt
+        && let Some(mut stdin) = child.inner().stdin.take()
+    {
+        stdin.write_all(prompt_text.as_bytes()).await?;
+        stdin.write_all(b"\n").await?;
+        stdin.flush().await?;
+        // Don't shutdown — keep stdin open so reasonix can continue
+        // reading from the PTY during its session
     }
 
     Ok(child.into())
@@ -312,10 +312,10 @@ impl StandardCodingAgentExecutor for Reasonix {
     fn get_availability_info(&self) -> AvailabilityInfo {
         let reasonix_dir = dirs::home_dir().map(|home| home.join(".reasonix"));
 
-        if let Some(ref dir) = reasonix_dir {
-            if dir.exists() {
-                return AvailabilityInfo::InstallationFound;
-            }
+        if let Some(ref dir) = reasonix_dir
+            && dir.exists()
+        {
+            return AvailabilityInfo::InstallationFound;
         }
 
         let config_found = self

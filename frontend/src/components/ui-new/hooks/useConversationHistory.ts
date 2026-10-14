@@ -112,37 +112,38 @@ export const useConversationHistory = ({
     // Do not emit here — empty state would only produce a non-renderable next_action row
   }, [attempt.id]);
 
-  const loadEntriesForHistoricExecutionProcess = (
-    executionProcess: ExecutionProcess
-  ) => {
-    let url = '';
-    if (executionProcess.executor_action.typ.type === 'ScriptRequest') {
-      url = `/api/execution-processes/${executionProcess.id}/raw-logs/ws`;
-    } else {
-      url = `/api/execution-processes/${executionProcess.id}/normalized-logs/ws`;
-    }
+  const loadEntriesForHistoricExecutionProcess = useCallback(
+    (executionProcess: ExecutionProcess) => {
+      let url = '';
+      if (executionProcess.executor_action.typ.type === 'ScriptRequest') {
+        url = `/api/execution-processes/${executionProcess.id}/raw-logs/ws`;
+      } else {
+        url = `/api/execution-processes/${executionProcess.id}/normalized-logs/ws`;
+      }
 
-    return new Promise<PatchType[]>((resolve) => {
-      const controller = streamJsonPatchEntries<PatchType>(url, {
-        onTokenUsage: (info) => {
-          latestTokenUsageRef.current = info;
-          setTokenUsageInfo(info);
-        },
-        onFinished: (allEntries) => {
-          controller.close();
-          resolve(allEntries);
-        },
-        onError: (err) => {
-          console.warn(
-            `Error loading entries for historic execution process ${executionProcess.id}`,
-            err
-          );
-          controller.close();
-          resolve([]);
-        },
+      return new Promise<PatchType[]>((resolve) => {
+        const controller = streamJsonPatchEntries<PatchType>(url, {
+          onTokenUsage: (info) => {
+            latestTokenUsageRef.current = info;
+            setTokenUsageInfo(info);
+          },
+          onFinished: (allEntries) => {
+            controller.close();
+            resolve(allEntries);
+          },
+          onError: (err) => {
+            console.warn(
+              `Error loading entries for historic execution process ${executionProcess.id}`,
+              err
+            );
+            controller.close();
+            resolve([]);
+          },
+        });
       });
-    });
-  };
+    },
+    [setTokenUsageInfo]
+  );
 
   const getLiveExecutionProcess = (
     executionProcessId: string
@@ -534,7 +535,7 @@ export const useConversationHistory = ({
       }
 
       return localDisplayedExecutionProcesses;
-    }, [executionProcesses]);
+    }, [executionProcesses, loadEntriesForHistoricExecutionProcess]);
 
   const loadRemainingEntriesInBatches = useCallback(
     async (batchSize: number): Promise<boolean> => {
@@ -574,7 +575,7 @@ export const useConversationHistory = ({
       }
       return anyUpdated;
     },
-    [executionProcesses]
+    [executionProcesses, loadEntriesForHistoricExecutionProcess]
   );
 
   const ensureProcessVisible = useCallback((p: ExecutionProcess) => {
@@ -745,7 +746,12 @@ export const useConversationHistory = ({
         emitEntries(displayedExecutionProcesses.current, 'running', false);
       }
     })();
-  }, [idStatusKey, executionProcessesRaw, emitEntries]);
+  }, [
+    idStatusKey,
+    executionProcessesRaw,
+    emitEntries,
+    loadEntriesForHistoricExecutionProcess,
+  ]);
 
   // If an execution process is removed, remove it from the state
   useEffect(() => {

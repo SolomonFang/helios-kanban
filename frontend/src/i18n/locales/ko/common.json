@@ -72,6 +72,21 @@
     "fixScript": "스크립트 수정",
     "subagent": {
       "defaultType": "서브에이전트"
+    },
+    "question": {
+      "awaiting": "응답 대기 중...",
+      "timedOut": "질문 시간이 초과되었습니다",
+      "answered": "{{count}}개 질문에 답변함",
+      "askUser": {
+        "title": "사용자 질문",
+        "progress": "({{current}}/{{total}})",
+        "multiSelect": "복수 선택",
+        "confirmSelection": "선택 확인",
+        "other": "기타:",
+        "customPlaceholder": "사용자 정의 답변을 입력하고 Enter를 누르세요...",
+        "submit": "제출",
+        "submitting": "제출 중..."
+      }
     }
   },
   "language": {
