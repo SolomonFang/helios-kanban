@@ -6,7 +6,7 @@ import { LinkNode } from '@lexical/link';
  * Sanitize href to block dangerous protocols.
  * Returns undefined if the href is blocked.
  */
-function sanitizeHref(href?: string): string | undefined {
+export function sanitizeHref(href?: string): string | undefined {
   if (typeof href !== 'string') return undefined;
   const trimmed = href.trim();
   // Block dangerous protocols

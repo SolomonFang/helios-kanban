@@ -33,7 +33,6 @@ import { ChatApprovalCard } from '../primitives/conversation/ChatApprovalCard';
 import { ChatUserMessage } from '../primitives/conversation/ChatUserMessage';
 import { ChatAssistantMessage } from '../primitives/conversation/ChatAssistantMessage';
 import { ChatSystemMessage } from '../primitives/conversation/ChatSystemMessage';
-import { ChatThinkingMessage } from '../primitives/conversation/ChatThinkingMessage';
 import { ChatErrorMessage } from '../primitives/conversation/ChatErrorMessage';
 import { ChatScriptEntry } from '../primitives/conversation/ChatScriptEntry';
 import { ChatSubagentEntry } from '../primitives/conversation/ChatSubagentEntry';
@@ -348,8 +347,9 @@ function NewDisplayConversationEntry(props: Props) {
 
     case 'thinking':
       return (
-        <ChatThinkingMessage
+        <ThinkingEntryRow
           content={entry.content}
+          expansionKey={expansionKey}
           taskAttemptId={taskAttempt?.id}
         />
       );
@@ -934,6 +934,42 @@ function AggregatedGroupEntry({ group }: { group: AggregatedPatchGroup }) {
 /**
  * Aggregated thinking group entry for thinking entries in previous turns
  */
+/**
+ * Single thinking entry for the current turn. Rendered as a collapsed
+ * one-line row (Kimi-style): streaming thinking text is not re-rendered every
+ * frame unless the user expands the row.
+ */
+function ThinkingEntryRow({
+  content,
+  expansionKey,
+  taskAttemptId,
+}: {
+  content: string;
+  expansionKey: string;
+  taskAttemptId: string | undefined;
+}) {
+  const [expanded, toggle] = usePersistedExpanded(
+    `entry:thinking:${expansionKey}`,
+    false
+  );
+  const [isHovered, setIsHovered] = useState(false);
+
+  const handleHoverChange = useCallback((hovered: boolean) => {
+    setIsHovered(hovered);
+  }, []);
+
+  return (
+    <ChatCollapsedThinking
+      entries={[{ content, expansionKey }]}
+      expanded={expanded}
+      isHovered={isHovered}
+      onToggle={toggle}
+      onHoverChange={handleHoverChange}
+      taskAttemptId={taskAttemptId}
+    />
+  );
+}
+
 function AggregatedThinkingGroupEntry({
   group,
   taskAttemptId,
