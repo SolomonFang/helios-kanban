@@ -15,7 +15,7 @@ import { useExecutionProcesses } from '@/hooks/useExecutionProcesses';
 import { useUserSystem } from '@/components/ConfigProvider';
 import { useApprovalFeedbackOptional } from '@/contexts/ApprovalFeedbackContext';
 import { useMessageEditContext } from '@/contexts/MessageEditContext';
-import { useEntries, useTokenUsage } from '@/contexts/EntriesContext';
+import { useEntriesState, useTokenUsage } from '@/contexts/EntriesContext';
 import { useReviewOptional } from '@/contexts/ReviewProvider';
 import { useActions } from '@/contexts/ActionsContext';
 import { useTodos } from '@/hooks/useTodos';
@@ -167,7 +167,7 @@ export function SessionChatBoxContainer(props: SessionChatBoxContainerProps) {
   }, [navigate, workspaceId]);
 
   // Get entries early to extract pending approval for scratch key
-  const { entries } = useEntries();
+  const entries = useEntriesState();
   const tokenUsageInfo = useTokenUsage();
 
   // Execution state

@@ -34,7 +34,7 @@ import { cn } from '@/lib/utils';
 //
 import { useReview } from '@/contexts/ReviewProvider';
 import { useClickedElements } from '@/contexts/ClickedElementsProvider';
-import { useEntries } from '@/contexts/EntriesContext';
+import { useEntriesState } from '@/contexts/EntriesContext';
 import { useApprovals } from '@/hooks/useApprovals';
 import { useKeySubmitFollowUp, Scope } from '@/keyboard';
 import { useHotkeysContext } from 'react-hotkeys-hook';
@@ -333,7 +333,7 @@ export function TaskFollowUpSection({
     isQueued && queuedMessage ? queuedMessage.data.message : localMessage;
 
   // Check if there's a pending approval - users shouldn't be able to type during approvals
-  const { entries } = useEntries();
+  const entries = useEntriesState();
   const { pendingApprovals } = useApprovals();
   const runningProcessIds = useMemo(
     () =>

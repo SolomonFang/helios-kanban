@@ -2,7 +2,10 @@ import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import DisplayConversationEntry from '../NormalizedConversation/DisplayConversationEntry';
-import { useEntries } from '@/contexts/EntriesContext';
+import {
+  useEntriesActions,
+  useSetTokenUsageInfo,
+} from '@/contexts/EntriesContext';
 import {
   AddEntryType,
   PatchTypeWithKey,
@@ -40,7 +43,8 @@ const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
   const [data, setData] = useState<PatchTypeWithKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [atBottom, setAtBottom] = useState(true);
-  const { setEntries, reset, setTokenUsageInfo } = useEntries();
+  const { setEntries, reset } = useEntriesActions();
+  const { setTokenUsageInfo } = useSetTokenUsageInfo();
   const pendingUpdateRef = useRef<{
     entries: PatchTypeWithKey[];
     addType: AddEntryType;

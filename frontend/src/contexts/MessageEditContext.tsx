@@ -5,7 +5,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-import { useEntries } from './EntriesContext';
+import { useEntriesState } from './EntriesContext';
 
 interface EditState {
   entryKey: string;
@@ -33,7 +33,7 @@ export function MessageEditProvider({
   children: React.ReactNode;
 }) {
   const [activeEdit, setActiveEdit] = useState<EditState | null>(null);
-  const { entries } = useEntries();
+  const entries = useEntriesState();
 
   // Build entry order map from entries
   const entryOrder = useMemo(() => {

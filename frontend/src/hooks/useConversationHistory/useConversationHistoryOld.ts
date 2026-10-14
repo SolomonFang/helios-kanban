@@ -8,7 +8,7 @@ import {
 } from 'shared/types';
 import type { TokenUsageInfo } from 'shared/types';
 import { useExecutionProcessesContext } from '@/contexts/ExecutionProcessesContext';
-import { useEntries } from '@/contexts/EntriesContext';
+import { useSetTokenUsageInfo } from '@/contexts/EntriesContext';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   extractTokenUsageFromEntries,
@@ -41,7 +41,7 @@ export const useConversationHistoryOld = ({
   const streamingProcessIdsRef = useRef<Set<string>>(new Set());
   const onEntriesUpdatedRef = useRef<OnEntriesUpdated | null>(null);
   const latestTokenUsageRef = useRef<TokenUsageInfo | null>(null);
-  const { setTokenUsageInfo } = useEntries();
+  const { setTokenUsageInfo } = useSetTokenUsageInfo();
 
   const mergeIntoDisplayed = (
     mutator: (state: ExecutionProcessStateStore) => void

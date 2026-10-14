@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  memo,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -11,7 +12,10 @@ import { Virtuoso, VirtuosoHandle, ListRange } from 'react-virtuoso';
 
 import NewDisplayConversationEntry from './NewDisplayConversationEntry';
 import { ApprovalFormProvider } from '@/contexts/ApprovalFormContext';
-import { useEntries } from '@/contexts/EntriesContext';
+import {
+  useEntriesActions,
+  useSetTokenUsageInfo,
+} from '@/contexts/EntriesContext';
 import {
   useResetProcess,
   type UseResetProcessResult,
@@ -73,7 +77,8 @@ export const ConversationList = forwardRef<
   const [data, setData] = useState<DisplayEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [atBottom, setAtBottom] = useState(true);
-  const { setEntries, reset, setTokenUsageInfo } = useEntries();
+  const { setEntries, reset } = useEntriesActions();
+  const { setTokenUsageInfo } = useSetTokenUsageInfo();
   const pendingUpdateRef = useRef<{
     entries: PatchTypeWithKey[];
     addType: AddEntryType;
@@ -362,7 +367,10 @@ export const ConversationList = forwardRef<
               <ItemRow item={item} context={messageListContext} />
             )}
             atBottomStateChange={setAtBottom}
-            followOutput={atBottom ? 'smooth' : false}
+            // 流式期间即时贴底，避免平滑滚动动画与 Virtuoso 重测量反复竞争。
+            followOutput={
+              atBottom ? (hasRunningProcess ? true : 'smooth') : false
+            }
             rangeChanged={handleRangeChanged}
             // 加大下方视口，避免流式追加时频繁重新测量导致卡顿。
             increaseViewportBy={{ top: 0, bottom: 600 }}
@@ -399,8 +407,43 @@ export const ConversationList = forwardRef<
   );
 });
 
+/**
+ * Equality for DisplayEntry items: aggregated groups are rebuilt every emit,
+ * so compare their entry arrays element-wise (entries are reference-stable
+ * thanks to wrapper caching in useConversationHistory).
+ */
+function areItemsEqual(
+  prev: { item: DisplayEntry; context: MessageListContext },
+  next: { item: DisplayEntry; context: MessageListContext }
+): boolean {
+  if (prev.context !== next.context) return false;
+  const a = prev.item;
+  const b = next.item;
+  if (a === b) return true;
+  if (a.patchKey !== b.patchKey || a.type !== b.type) return false;
+
+  const aGroup =
+    isAggregatedGroup(a) ||
+    isAggregatedDiffGroup(a) ||
+    isAggregatedThinkingGroup(a)
+      ? a
+      : null;
+  const bGroup =
+    isAggregatedGroup(b) ||
+    isAggregatedDiffGroup(b) ||
+    isAggregatedThinkingGroup(b)
+      ? b
+      : null;
+  if (!aGroup || !bGroup) return false;
+  if (aGroup.entries.length !== bGroup.entries.length) return false;
+  for (let i = 0; i < aGroup.entries.length; i++) {
+    if (aGroup.entries[i] !== bGroup.entries[i]) return false;
+  }
+  return true;
+}
+
 /** 渲染单条对话项，分发到聚合/普通/原始日志三种渲染分支。 */
-function ItemRow({
+const ItemRow = memo(function ItemRow({
   item,
   context,
 }: {
@@ -477,6 +520,6 @@ function ItemRow({
   }
 
   return null;
-}
+}, areItemsEqual);
 
 export default ConversationList;

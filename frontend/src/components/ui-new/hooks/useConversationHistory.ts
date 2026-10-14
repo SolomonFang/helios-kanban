@@ -8,7 +8,7 @@ import {
   ToolStatus,
 } from 'shared/types';
 import { useExecutionProcessesContext } from '@/contexts/ExecutionProcessesContext';
-import { useEntries } from '@/contexts/EntriesContext';
+import { useSetTokenUsageInfo } from '@/contexts/EntriesContext';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   extractTokenUsageFromEntries,
@@ -37,6 +37,22 @@ import {
   REMAINING_BATCH_SIZE,
 } from '@/hooks/useConversationHistory/constants';
 
+// created_at strings never change for a given process, so the parsed
+// timestamp is cached to avoid re-parsing on every sort comparison.
+const getCachedProcessSortKey = (
+  p: ExecutionProcessStateStore[string],
+  cache: Map<string, number>
+): number => {
+  const id = p.executionProcess.id;
+  const cached = cache.get(id);
+  if (cached !== undefined) return cached;
+  const key = new Date(
+    p.executionProcess.created_at as unknown as string
+  ).getTime();
+  cache.set(id, key);
+  return key;
+};
+
 export type {
   AddEntryType,
   OnEntriesUpdated,
@@ -62,7 +78,7 @@ export const useConversationHistory = ({
     isLoading,
     isConnected,
   } = useExecutionProcessesContext();
-  const { setTokenUsageInfo } = useEntries();
+  const { setTokenUsageInfo } = useSetTokenUsageInfo();
   const executionProcesses = useRef<ExecutionProcess[]>(executionProcessesRaw);
   const displayedExecutionProcesses = useRef<ExecutionProcessStateStore>({});
   const loadedInitialEntries = useRef(false);
@@ -72,6 +88,29 @@ export const useConversationHistory = ({
     new Map()
   );
   const latestTokenUsageRef = useRef<TokenUsageInfo | null>(null);
+
+  // Reference-stability caches: unchanged entries keep their identity across
+  // emits so downstream memoized rows skip re-rendering during streaming.
+  const wrappedPatchCacheRef = useRef<
+    Map<string, { source: PatchType; wrapped: PatchTypeWithKey }>
+  >(new Map());
+  const processSortKeyCacheRef = useRef<Map<string, number>>(new Map());
+  const userPatchCacheRef = useRef<
+    Map<string, { prompt: string; wrapped: PatchTypeWithKey }>
+  >(new Map());
+  const loadingPatchCacheRef = useRef<Map<string, PatchTypeWithKey>>(new Map());
+  type ProcessSliceCacheEntry = {
+    entriesRef: PatchTypeWithKey[];
+    processRef: ExecutionProcessStateStore[string]['executionProcess'];
+    liveStatus: ExecutionProcessStatus | undefined;
+    liveExitCode: number | null;
+    slice: PatchTypeWithKey[];
+    tokenUsageInfo: TokenUsageInfo | null;
+    contributesRunning: boolean;
+  };
+  const processSliceCacheRef = useRef<Map<string, ProcessSliceCacheEntry>>(
+    new Map()
+  );
 
   // Track whether scripts have run in this conversation
   const [hasSetupScriptRun, setHasSetupScriptRun] = useState(false);
@@ -106,6 +145,11 @@ export const useConversationHistory = ({
     latestTokenUsageRef.current = null;
     streamingProcessIdsRef.current.clear();
     previousStatusMapRef.current.clear();
+    wrappedPatchCacheRef.current.clear();
+    processSortKeyCacheRef.current.clear();
+    userPatchCacheRef.current.clear();
+    loadingPatchCacheRef.current.clear();
+    processSliceCacheRef.current.clear();
     setHasSetupScriptRun(false);
     setHasCleanupScriptRun(false);
     setHasRunningProcess(false);
@@ -153,16 +197,40 @@ export const useConversationHistory = ({
     );
   };
 
+  // Wraps a patch with its display key. immer's structural sharing keeps
+  // unchanged entries referentially equal across frames, so the cached wrapper
+  // can be reused and downstream memoized rows skip re-rendering.
   const patchWithKey = (
     patch: PatchType,
     executionProcessId: string,
     index: number | 'user'
-  ) => {
-    return {
+  ): PatchTypeWithKey => {
+    const patchKey = `${executionProcessId}:${index}`;
+    const cached = wrappedPatchCacheRef.current.get(patchKey);
+    if (cached && cached.source === patch) {
+      return cached.wrapped;
+    }
+    const wrapped: PatchTypeWithKey = {
       ...patch,
-      patchKey: `${executionProcessId}:${index}`,
+      patchKey,
       executionProcessId,
     };
+    wrappedPatchCacheRef.current.set(patchKey, { source: patch, wrapped });
+    return wrapped;
+  };
+
+  // Drop all cached wrappers/slices belonging to a removed process.
+  const evictProcessCaches = (executionProcessId: string) => {
+    processSliceCacheRef.current.delete(executionProcessId);
+    processSortKeyCacheRef.current.delete(executionProcessId);
+    userPatchCacheRef.current.delete(executionProcessId);
+    loadingPatchCacheRef.current.delete(executionProcessId);
+    const prefix = `${executionProcessId}:`;
+    for (const key of wrappedPatchCacheRef.current.keys()) {
+      if (key.startsWith(prefix)) {
+        wrappedPatchCacheRef.current.delete(key);
+      }
+    }
   };
 
   const flattenEntries = (
@@ -179,10 +247,8 @@ export const useConversationHistory = ({
       )
       .sort(
         (a, b) =>
-          new Date(
-            a.executionProcess.created_at as unknown as string
-          ).getTime() -
-          new Date(b.executionProcess.created_at as unknown as string).getTime()
+          getCachedProcessSortKey(a, processSortKeyCacheRef.current) -
+          getCachedProcessSortKey(b, processSortKeyCacheRef.current)
       )
       .flatMap((p) => p.entries);
   };
@@ -197,181 +263,227 @@ export const useConversationHistory = ({
     );
   };
 
+  // Computes one process's contribution to the emitted entry list. Pure
+  // except for the setup/cleanup-run tracking side effects.
+  const computeProcessSlice = (
+    p: ExecutionProcessStateStore[string],
+    liveProcess: ExecutionProcess | undefined
+  ): {
+    slice: PatchTypeWithKey[];
+    tokenUsageInfo: TokenUsageInfo | null;
+    contributesRunning: boolean;
+  } => {
+    const entries: PatchTypeWithKey[] = [];
+    let tokenUsageInfo: TokenUsageInfo | null = null;
+    let contributesRunning = false;
+
+    if (
+      p.executionProcess.executor_action.typ.type ===
+        'CodingAgentInitialRequest' ||
+      p.executionProcess.executor_action.typ.type ===
+        'CodingAgentFollowUpRequest' ||
+      p.executionProcess.executor_action.typ.type === 'ReviewRequest'
+    ) {
+      // New user message (wrapper cached by prompt so the user row keeps a
+      // stable reference even when this slice is rebuilt)
+      const actionType = p.executionProcess.executor_action.typ;
+      const userCached = userPatchCacheRef.current.get(p.executionProcess.id);
+      let userPatchWithKey: PatchTypeWithKey;
+      if (userCached && userCached.prompt === actionType.prompt) {
+        userPatchWithKey = userCached.wrapped;
+      } else {
+        userPatchWithKey = {
+          type: 'NORMALIZED_ENTRY',
+          content: {
+            entry_type: { type: 'user_message' },
+            content: actionType.prompt,
+            timestamp: null,
+          },
+          patchKey: `${p.executionProcess.id}:user`,
+          executionProcessId: p.executionProcess.id,
+        };
+        userPatchCacheRef.current.set(p.executionProcess.id, {
+          prompt: actionType.prompt,
+          wrapped: userPatchWithKey,
+        });
+      }
+      entries.push(userPatchWithKey);
+
+      // Extract latest token usage info before filtering
+      for (let i = p.entries.length - 1; i >= 0; i--) {
+        const e = p.entries[i];
+        if (
+          e?.type === 'NORMALIZED_ENTRY' &&
+          e.content.entry_type.type === 'token_usage_info'
+        ) {
+          const et = e.content.entry_type;
+          tokenUsageInfo = {
+            total_tokens: et.total_tokens,
+            model_context_window: et.model_context_window,
+          };
+          break;
+        }
+      }
+
+      // Remove user messages (replaced with custom one) and token usage info (displayed separately)
+      const entriesExcludingUser = p.entries.filter(
+        (e) =>
+          e.type !== 'NORMALIZED_ENTRY' ||
+          (e.content.entry_type.type !== 'user_message' &&
+            e.content.entry_type.type !== 'token_usage_info')
+      );
+
+      entries.push(...entriesExcludingUser);
+
+      if (liveProcess?.status === ExecutionProcessStatus.running) {
+        contributesRunning = true;
+        let loadingPatch = loadingPatchCacheRef.current.get(
+          p.executionProcess.id
+        );
+        if (!loadingPatch) {
+          loadingPatch = makeLoadingPatch(p.executionProcess.id);
+          loadingPatchCacheRef.current.set(p.executionProcess.id, loadingPatch);
+        }
+        entries.push(loadingPatch);
+      }
+    } else if (
+      p.executionProcess.executor_action.typ.type === 'ScriptRequest'
+    ) {
+      // Add setup and cleanup script as a tool call
+      let toolName = '';
+      const scriptContext = p.executionProcess.executor_action.typ.context;
+      switch (scriptContext) {
+        case 'SetupScript':
+          toolName = 'Setup Script';
+          break;
+        case 'CleanupScript':
+          toolName = 'Cleanup Script';
+          break;
+        case 'ArchiveScript':
+          toolName = 'Archive Script';
+          break;
+        case 'ToolInstallScript':
+          toolName = 'Tool Install Script';
+          break;
+        default:
+          return { slice: [], tokenUsageInfo: null, contributesRunning };
+      }
+
+      // Track that setup/cleanup scripts have run
+      if (scriptContext === 'SetupScript') {
+        setHasSetupScriptRun(true);
+      } else if (scriptContext === 'CleanupScript') {
+        setHasCleanupScriptRun(true);
+      }
+
+      if (liveProcess?.status === ExecutionProcessStatus.running) {
+        contributesRunning = true;
+      }
+
+      const exitCode = Number(liveProcess?.exit_code) || 0;
+      const exit_status: CommandExitStatus | null =
+        liveProcess?.status === 'running'
+          ? null
+          : {
+              type: 'exit_code',
+              code: exitCode,
+            };
+
+      const toolStatus: ToolStatus =
+        liveProcess?.status === ExecutionProcessStatus.running
+          ? { status: 'created' }
+          : exitCode === 0
+            ? { status: 'success' }
+            : { status: 'failed' };
+
+      const output = p.entries.map((line) => line.content).join('\n');
+
+      const toolNormalizedEntry: NormalizedEntry = {
+        entry_type: {
+          type: 'tool_use',
+          tool_name: toolName,
+          action_type: {
+            action: 'command_run',
+            command: p.executionProcess.executor_action.typ.script,
+            result: {
+              output,
+              exit_status,
+            },
+          },
+          status: toolStatus,
+        },
+        content: toolName,
+        timestamp: null,
+      };
+      const toolPatch: PatchType = {
+        type: 'NORMALIZED_ENTRY',
+        content: toolNormalizedEntry,
+      };
+
+      entries.push({
+        ...toolPatch,
+        patchKey: `${p.executionProcess.id}:0`,
+        executionProcessId: p.executionProcess.id,
+      });
+    }
+
+    return { slice: entries, tokenUsageInfo, contributesRunning };
+  };
+
   const flattenEntriesForEmit = useCallback(
     (executionProcessState: ExecutionProcessStateStore): PatchTypeWithKey[] => {
       let hasRunningProcess = false;
       let latestTokenUsageInfo: TokenUsageInfo | null = null;
 
-      // Create user messages + tool calls for setup/cleanup scripts
-      const allEntries = Object.values(executionProcessState)
-        .sort(
-          (a, b) =>
-            new Date(
-              a.executionProcess.created_at as unknown as string
-            ).getTime() -
-            new Date(
-              b.executionProcess.created_at as unknown as string
-            ).getTime()
-        )
-        .flatMap((p) => {
-          const entries: PatchTypeWithKey[] = [];
-          if (
-            p.executionProcess.executor_action.typ.type ===
-              'CodingAgentInitialRequest' ||
-            p.executionProcess.executor_action.typ.type ===
-              'CodingAgentFollowUpRequest' ||
-            p.executionProcess.executor_action.typ.type === 'ReviewRequest'
-          ) {
-            // New user message
-            const actionType = p.executionProcess.executor_action.typ;
-            const userNormalizedEntry: NormalizedEntry = {
-              entry_type: {
-                type: 'user_message',
-              },
-              content: actionType.prompt,
-              timestamp: null,
-            };
-            const userPatch: PatchType = {
-              type: 'NORMALIZED_ENTRY',
-              content: userNormalizedEntry,
-            };
-            const userPatchTypeWithKey = patchWithKey(
-              userPatch,
-              p.executionProcess.id,
-              'user'
-            );
-            entries.push(userPatchTypeWithKey);
+      // Create user messages + tool calls for setup/cleanup scripts.
+      // Per-process slices are cached: a slice is only rebuilt when the
+      // process's entries array, live status/exit code, or process object
+      // actually changes, so historic processes keep stable references
+      // while an unrelated process is streaming.
+      const sortedProcesses = Object.values(executionProcessState).sort(
+        (a, b) =>
+          getCachedProcessSortKey(a, processSortKeyCacheRef.current) -
+          getCachedProcessSortKey(b, processSortKeyCacheRef.current)
+      );
 
-            // Extract latest token usage info before filtering
-            let tokenUsageEntry: PatchTypeWithKey | undefined;
-            for (let i = p.entries.length - 1; i >= 0; i--) {
-              const e = p.entries[i];
-              if (
-                e?.type === 'NORMALIZED_ENTRY' &&
-                e.content.entry_type.type === 'token_usage_info'
-              ) {
-                tokenUsageEntry = e;
-                break;
-              }
-            }
-            if (tokenUsageEntry?.type === 'NORMALIZED_ENTRY') {
-              const et = tokenUsageEntry.content.entry_type;
-              if (et.type === 'token_usage_info') {
-                latestTokenUsageInfo = {
-                  total_tokens: et.total_tokens,
-                  model_context_window: et.model_context_window,
-                };
-              }
-            }
+      const allEntries: PatchTypeWithKey[] = [];
+      for (const p of sortedProcesses) {
+        const liveProcess = getLiveExecutionProcess(p.executionProcess.id);
+        const liveStatus = liveProcess?.status;
+        const liveExitCode =
+          liveProcess?.exit_code != null ? Number(liveProcess.exit_code) : null;
 
-            // Remove user messages (replaced with custom one) and token usage info (displayed separately)
-            const entriesExcludingUser = p.entries.filter(
-              (e) =>
-                e.type !== 'NORMALIZED_ENTRY' ||
-                (e.content.entry_type.type !== 'user_message' &&
-                  e.content.entry_type.type !== 'token_usage_info')
-            );
+        const cached = processSliceCacheRef.current.get(p.executionProcess.id);
+        let result: {
+          slice: PatchTypeWithKey[];
+          tokenUsageInfo: TokenUsageInfo | null;
+          contributesRunning: boolean;
+        };
+        if (
+          cached &&
+          cached.entriesRef === p.entries &&
+          cached.processRef === p.executionProcess &&
+          cached.liveStatus === liveStatus &&
+          cached.liveExitCode === liveExitCode
+        ) {
+          result = cached;
+        } else {
+          result = computeProcessSlice(p, liveProcess);
+          processSliceCacheRef.current.set(p.executionProcess.id, {
+            entriesRef: p.entries,
+            processRef: p.executionProcess,
+            liveStatus,
+            liveExitCode,
+            ...result,
+          });
+        }
 
-            entries.push(...entriesExcludingUser);
-
-            const liveProcessStatus = getLiveExecutionProcess(
-              p.executionProcess.id
-            )?.status;
-            const isProcessRunning =
-              liveProcessStatus === ExecutionProcessStatus.running;
-            if (isProcessRunning) {
-              hasRunningProcess = true;
-              entries.push(makeLoadingPatch(p.executionProcess.id));
-            }
-          } else if (
-            p.executionProcess.executor_action.typ.type === 'ScriptRequest'
-          ) {
-            // Add setup and cleanup script as a tool call
-            let toolName = '';
-            const scriptContext =
-              p.executionProcess.executor_action.typ.context;
-            switch (scriptContext) {
-              case 'SetupScript':
-                toolName = 'Setup Script';
-                break;
-              case 'CleanupScript':
-                toolName = 'Cleanup Script';
-                break;
-              case 'ArchiveScript':
-                toolName = 'Archive Script';
-                break;
-              case 'ToolInstallScript':
-                toolName = 'Tool Install Script';
-                break;
-              default:
-                return [];
-            }
-
-            // Track that setup/cleanup scripts have run
-            if (scriptContext === 'SetupScript') {
-              setHasSetupScriptRun(true);
-            } else if (scriptContext === 'CleanupScript') {
-              setHasCleanupScriptRun(true);
-            }
-
-            const executionProcess = getLiveExecutionProcess(
-              p.executionProcess.id
-            );
-
-            if (executionProcess?.status === ExecutionProcessStatus.running) {
-              hasRunningProcess = true;
-            }
-
-            const exitCode = Number(executionProcess?.exit_code) || 0;
-            const exit_status: CommandExitStatus | null =
-              executionProcess?.status === 'running'
-                ? null
-                : {
-                    type: 'exit_code',
-                    code: exitCode,
-                  };
-
-            const toolStatus: ToolStatus =
-              executionProcess?.status === ExecutionProcessStatus.running
-                ? { status: 'created' }
-                : exitCode === 0
-                  ? { status: 'success' }
-                  : { status: 'failed' };
-
-            const output = p.entries.map((line) => line.content).join('\n');
-
-            const toolNormalizedEntry: NormalizedEntry = {
-              entry_type: {
-                type: 'tool_use',
-                tool_name: toolName,
-                action_type: {
-                  action: 'command_run',
-                  command: p.executionProcess.executor_action.typ.script,
-                  result: {
-                    output,
-                    exit_status,
-                  },
-                },
-                status: toolStatus,
-              },
-              content: toolName,
-              timestamp: null,
-            };
-            const toolPatch: PatchType = {
-              type: 'NORMALIZED_ENTRY',
-              content: toolNormalizedEntry,
-            };
-            const toolPatchWithKey: PatchTypeWithKey = patchWithKey(
-              toolPatch,
-              p.executionProcess.id,
-              0
-            );
-
-            entries.push(toolPatchWithKey);
-          }
-
-          return entries;
-        });
+        if (result.contributesRunning) hasRunningProcess = true;
+        if (result.tokenUsageInfo !== null) {
+          latestTokenUsageInfo = result.tokenUsageInfo;
+        }
+        allEntries.push(...result.slice);
+      }
 
       // Update running process state
       setHasRunningProcess(hasRunningProcess);
@@ -614,6 +726,7 @@ export const useConversationHistory = ({
     for (const id of displayedIds) {
       if (!visibleProcessIds.has(id)) {
         delete displayedExecutionProcesses.current[id];
+        evictProcessCaches(id);
         changed = true;
       }
     }
@@ -765,6 +878,7 @@ export const useConversationHistory = ({
       mergeIntoDisplayed((state) => {
         removedProcessIds.forEach((id) => {
           delete state[id];
+          evictProcessCaches(id);
         });
       });
     }
