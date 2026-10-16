@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useTransition,
 } from 'react';
@@ -11,7 +12,10 @@ import { writeClipboardViaBridge } from '@/vscode/bridge';
 import { useChangesView } from '@/contexts/ChangesViewContext';
 import { cn } from '@/lib/utils';
 import { repairMarkdown } from './repairMarkdown';
-import { splitMarkdownBlocks } from './splitBlocks';
+import {
+  splitMarkdownBlocksIncremental,
+  type MarkdownBlocksState,
+} from './splitBlocks';
 import { MarkdownBlock } from './MarkdownBlock';
 
 interface StreamingMarkdownProps {
@@ -37,7 +41,19 @@ export function StreamingMarkdown({
   const { viewFileInChanges, findMatchingDiffPath } = useChangesView();
 
   const repaired = useMemo(() => repairMarkdown(content), [content]);
-  const blocks = useMemo(() => splitMarkdownBlocks(repaired), [repaired]);
+  // Incremental splitting: streaming updates are append-only, so only the
+  // tail (from the previous last block's offset) is re-lexed instead of the
+  // whole message on every frame.
+  const splitterRef = useRef<MarkdownBlocksState | null>(null);
+  const blocks = useMemo(() => {
+    const state = splitMarkdownBlocksIncremental(
+      repaired,
+      content,
+      splitterRef.current
+    );
+    splitterRef.current = state;
+    return state.blocks;
+  }, [repaired, content]);
 
   const [displayBlocks, setDisplayBlocks] = useState(blocks);
   const [, startTransition] = useTransition();
