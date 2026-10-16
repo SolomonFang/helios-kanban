@@ -69,6 +69,13 @@
       "createdTask": "작업 생성: {{description}}",
       "todoOperation": "{{operation}} 할 일"
     },
+    "toolStatus": {
+      "running": "실행 중",
+      "failed": "실패",
+      "denied": "거부됨",
+      "timedOut": "시간 초과",
+      "pendingApproval": "승인 대기 중"
+    },
     "fixScript": "스크립트 수정",
     "subagent": {
       "defaultType": "서브에이전트"

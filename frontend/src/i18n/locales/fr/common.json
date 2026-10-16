@@ -58,6 +58,13 @@
       "createdTask": "Tâche créée : {{description}}",
       "todoOperation": "{{operation}} tâches à faire"
     },
+    "toolStatus": {
+      "running": "En cours",
+      "failed": "Échec",
+      "denied": "Refusé",
+      "timedOut": "Expiré",
+      "pendingApproval": "En attente d'approbation"
+    },
     "fixScript": "Corriger le script",
     "subagent": {
       "defaultType": "Sous-agent"

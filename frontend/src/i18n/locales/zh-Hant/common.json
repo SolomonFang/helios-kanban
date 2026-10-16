@@ -58,6 +58,13 @@
       "createdTask": "建立任務：{{description}}",
       "todoOperation": "{{operation}} 待辦事項"
     },
+    "toolStatus": {
+      "running": "執行中",
+      "failed": "失敗",
+      "denied": "已拒絕",
+      "timedOut": "已逾時",
+      "pendingApproval": "等待審批"
+    },
     "fixScript": "修復腳本",
     "subagent": {
       "defaultType": "子代理"

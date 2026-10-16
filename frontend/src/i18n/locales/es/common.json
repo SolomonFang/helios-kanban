@@ -69,6 +69,13 @@
       "createdTask": "Creó tarea: {{description}}",
       "todoOperation": "{{operation}} tareas pendientes"
     },
+    "toolStatus": {
+      "running": "En ejecución",
+      "failed": "Fallido",
+      "denied": "Denegado",
+      "timedOut": "Tiempo agotado",
+      "pendingApproval": "Esperando aprobación"
+    },
     "fixScript": "Corregir Script",
     "subagent": {
       "defaultType": "Subagente"

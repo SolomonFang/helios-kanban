@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LegacyMarkdown } from './LegacyMarkdown';
 import {
@@ -121,49 +121,57 @@ const getEntryIcon = (entryType: NormalizedEntryType) => {
   return <Settings className={iconSize} />;
 };
 
-type ExitStatusVisualisation = 'success' | 'error' | 'pending';
+type ToolStatusVisualisation = 'success' | 'error' | 'pending' | 'warning';
 
-const getStatusIndicator = (entryType: NormalizedEntryType) => {
-  let status_visualisation: ExitStatusVisualisation | null = null;
-  if (
-    entryType.type === 'tool_use' &&
-    entryType.action_type.action === 'command_run'
-  ) {
-    status_visualisation = 'pending';
-    if (entryType.action_type.result?.exit_status?.type === 'success') {
-      if (entryType.action_type.result?.exit_status?.success) {
-        status_visualisation = 'success';
-      } else {
-        status_visualisation = 'error';
-      }
-    } else if (
-      entryType.action_type.result?.exit_status?.type === 'exit_code'
-    ) {
-      if (entryType.action_type.result?.exit_status?.code === 0) {
-        status_visualisation = 'success';
-      } else {
-        status_visualisation = 'error';
-      }
+const getToolStatusVisualisation = (
+  entryType: NormalizedEntryType
+): ToolStatusVisualisation | null => {
+  if (entryType.type !== 'tool_use') return null;
+
+  // Command results are more precise than the generic tool status.
+  if (entryType.action_type.action === 'command_run') {
+    const exitStatus = entryType.action_type.result?.exit_status;
+    if (exitStatus?.type === 'success') {
+      return exitStatus.success ? 'success' : 'error';
+    }
+    if (exitStatus?.type === 'exit_code') {
+      return exitStatus.code === 0 ? 'success' : 'error';
     }
   }
 
-  // If pending, should be a pulsing primary-foreground
-  const colorMap: Record<ExitStatusVisualisation, string> = {
+  switch (entryType.status.status) {
+    case 'success':
+      return 'success';
+    case 'failed':
+    case 'denied':
+      return 'error';
+    case 'timed_out':
+      return 'warning';
+    case 'created':
+    case 'pending_approval':
+      return 'pending';
+  }
+};
+
+const getStatusIndicator = (entryType: NormalizedEntryType) => {
+  const statusVisualisation = getToolStatusVisualisation(entryType);
+  if (!statusVisualisation) return null;
+
+  const colorMap: Record<ToolStatusVisualisation, string> = {
     success: 'bg-green-300',
     error: 'bg-red-300',
     pending: 'bg-primary-foreground/50',
+    warning: 'bg-amber-400',
   };
-
-  if (!status_visualisation) return null;
 
   return (
     <div className="relative">
       <div
-        className={`${colorMap[status_visualisation]} h-1.5 w-1.5 rounded-full absolute -left-1 -bottom-4`}
+        className={`${colorMap[statusVisualisation]} h-1.5 w-1.5 rounded-full absolute -left-1 -bottom-4`}
       />
-      {status_visualisation === 'pending' && (
+      {statusVisualisation === 'pending' && (
         <div
-          className={`${colorMap[status_visualisation]} h-1.5 w-1.5 rounded-full absolute -left-1 -bottom-4 animate-ping`}
+          className={`${colorMap[statusVisualisation]} h-1.5 w-1.5 rounded-full absolute -left-1 -bottom-4 animate-ping`}
         />
       )}
     </div>
@@ -248,6 +256,45 @@ const MessageCard: React.FC<{
           />
         )}
       </div>
+    </div>
+  );
+};
+
+const ThinkingEntry: React.FC<{
+  content: string;
+  expansionKey: string;
+  taskAttemptId?: string;
+}> = ({ content, expansionKey, taskAttemptId }) => {
+  const { t } = useTranslation('common');
+  const [expanded, toggle] = useExpandable(`entry:${expansionKey}`, false);
+
+  return (
+    <div className="w-full text-muted-foreground">
+      <button
+        type="button"
+        className="flex items-center gap-1.5 text-left text-sm hover:text-foreground transition-colors"
+        onClick={() => toggle()}
+        aria-expanded={expanded}
+      >
+        <Brain className="h-3.5 w-3.5" />
+        <span>{t('conversation.thinking')}</span>
+        <ChevronDown
+          className={cn(
+            'h-3.5 w-3.5 transition-transform',
+            expanded ? '' : '-rotate-90'
+          )}
+        />
+      </button>
+      {expanded && (
+        <div className="pl-5 pt-2 opacity-60">
+          <LegacyMarkdown
+            value={content}
+            disabled
+            className="whitespace-pre-wrap break-words flex flex-col gap-1 font-light"
+            taskAttemptId={taskAttemptId}
+          />
+        </div>
+      )}
     </div>
   );
 };
@@ -463,27 +510,51 @@ const ToolCallCard: React.FC<{
       ? entry.entry_type
       : undefined;
 
-  // Compute defaults from entry
-  const linkifyUrls = entryType?.tool_name === 'Tool Install Script';
-  const defaultExpanded = linkifyUrls;
-
-  const [expanded, toggle] = useExpandable(
-    `tool-entry:${expansionKey}`,
-    defaultExpanded
-  );
-  const effectiveExpanded = forceExpanded || expanded;
-
   // Extract action details
   const actionType = entryType?.action_type;
   const isCommand = actionType?.action === 'command_run';
   const isTool = actionType?.action === 'tool';
-
-  // Label and content
-  const label = isCommand ? 'Ran' : entryType?.tool_name || 'Tool';
+  const isTaskCreate = actionType?.action === 'task_create';
 
   const inlineText = isNormalizedEntry ? entry.content.trim() : '';
   const isSingleLine = inlineText !== '' && !/\r?\n/.test(inlineText);
-  const showInlineSummary = isSingleLine;
+
+  // Action-specific summaries keep the collapsed row useful instead of
+  // showing only the tool name.
+  const summary = (() => {
+    if (!entryType || !actionType) {
+      if (isSingleLine) return inlineText;
+      return isCommand ? t('conversation.ran') : t('conversation.tool');
+    }
+    switch (actionType.action) {
+      case 'file_read':
+        return t('conversation.toolSummary.read', {
+          path: actionType.path,
+        });
+      case 'search':
+        return t('conversation.toolSummary.searched', {
+          query: actionType.query,
+        });
+      case 'web_fetch':
+        return t('conversation.toolSummary.fetched', {
+          url: actionType.url,
+        });
+      case 'command_run':
+        return actionType.command || t('conversation.toolSummary.ranCommand');
+      case 'task_create':
+        return t('conversation.toolSummary.createdTask', {
+          description: actionType.description,
+        });
+      case 'todo_management':
+        return t('conversation.toolSummary.todoOperation', {
+          operation: actionType.operation,
+        });
+      case 'other':
+        return actionType.description;
+      default:
+        return entryType.tool_name || t('conversation.tool');
+    }
+  })();
 
   // Command details
   const commandResult = isCommand ? actionType.result : null;
@@ -492,13 +563,58 @@ const ToolCallCard: React.FC<{
   if (isCommand) {
     const fromArgs =
       typeof actionType.command === 'string' ? actionType.command : '';
-    const fallback = inlineText;
-    argsText = (fromArgs || fallback).trim();
+    argsText = (fromArgs || inlineText).trim();
   }
 
-  // Tool details
+  // Generic tool and subagent results share the same ToolResult shape.
   const hasArgs = isTool && !!actionType.arguments;
-  const hasResult = isTool && !!actionType.result;
+  const toolResult =
+    (isTool || isTaskCreate) && actionType ? actionType.result : null;
+  const hasResult = Boolean(toolResult);
+
+  const statusVisualisation = entryType
+    ? getToolStatusVisualisation(entryType)
+    : null;
+  const linkifyUrls = entryType?.tool_name === 'Tool Install Script';
+  const defaultExpanded =
+    linkifyUrls || (isCommand && statusVisualisation === 'error');
+
+  const [expanded, toggle] = useExpandable(
+    `tool-entry:${expansionKey}`,
+    defaultExpanded
+  );
+  const effectiveExpanded = forceExpanded || expanded;
+
+  // Also auto-expand when a running command fails mid-stream. Only do this
+  // once per failure so the user can still collapse it afterwards.
+  const autoExpandedErrorRef = useRef(false);
+  const toggleRef = useRef(toggle);
+  toggleRef.current = toggle;
+  useEffect(() => {
+    const commandFailed = isCommand && statusVisualisation === 'error';
+    if (commandFailed && !autoExpandedErrorRef.current) {
+      autoExpandedErrorRef.current = true;
+      toggleRef.current(true);
+    } else if (!commandFailed) {
+      autoExpandedErrorRef.current = false;
+    }
+  }, [isCommand, statusVisualisation]);
+
+  const statusLabel = (() => {
+    if (!entryType || !statusVisualisation || statusVisualisation === 'success')
+      return null;
+    if (statusVisualisation === 'pending') {
+      return entryType.status.status === 'pending_approval'
+        ? t('conversation.toolStatus.pendingApproval')
+        : t('conversation.toolStatus.running');
+    }
+    if (statusVisualisation === 'warning') {
+      return t('conversation.toolStatus.timedOut');
+    }
+    return entryType.status.status === 'denied'
+      ? t('conversation.toolStatus.denied')
+      : t('conversation.toolStatus.failed');
+  })();
 
   const hasExpandableDetails = isCommand
     ? Boolean(argsText) || Boolean(output)
@@ -524,19 +640,36 @@ const ToolCallCard: React.FC<{
   );
 
   return (
-    <div className="inline-block w-full flex flex-col gap-4">
+    <div className="inline-block w-full flex flex-col gap-2">
       <HeaderWrapper {...headerProps} className={headerClassName}>
-        <span className=" min-w-0 flex items-center gap-1.5">
-          <span>
+        <span className="min-w-0 flex-1 flex items-center gap-1.5">
+          <span className="shrink-0">
             {entryType && getStatusIndicator(entryType)}
             {entryType && getEntryIcon(entryType)}
           </span>
-          {showInlineSummary ? (
-            <span className="text-sm font-mono">{inlineText}</span>
-          ) : (
-            <span className="text-sm font-mono">{label}</span>
+          <span className="min-w-0 truncate text-sm font-mono" title={summary}>
+            {summary}
+          </span>
+          {statusLabel && (
+            <span
+              className={cn(
+                'shrink-0 text-xs',
+                statusVisualisation === 'error' && 'text-red-500',
+                statusVisualisation === 'warning' && 'text-amber-600'
+              )}
+            >
+              {statusLabel}
+            </span>
           )}
         </span>
+        {hasExpandableDetails && (
+          <ChevronDown
+            className={cn(
+              'ml-auto h-3.5 w-3.5 shrink-0 transition-transform',
+              effectiveExpanded ? '' : '-rotate-90'
+            )}
+          />
+        )}
       </HeaderWrapper>
 
       {effectiveExpanded && (
@@ -565,7 +698,7 @@ const ToolCallCard: React.FC<{
             </>
           ) : (
             <>
-              {isTool && actionType && (
+              {isTool && hasArgs && (
                 <>
                   <div className="font-normal uppercase bg-background border-b border-dashed px-2 py-1">
                     {t('conversation.args')}
@@ -573,20 +706,24 @@ const ToolCallCard: React.FC<{
                   <div className="px-2 py-1">
                     {renderJson(actionType.arguments)}
                   </div>
-                  <div className="font-normal uppercase bg-background border-y border-dashed px-2 py-1">
+                </>
+              )}
+              {toolResult && (
+                <>
+                  <div className="font-normal uppercase bg-background border-b border-dashed px-2 py-1">
                     {t('conversation.result')}
                   </div>
                   <div className="px-2 py-1">
-                    {actionType.result?.type.type === 'markdown' &&
-                      actionType.result.value && (
+                    {toolResult.type.type === 'markdown' &&
+                      toolResult.value && (
                         <LegacyMarkdown
-                          value={actionType.result.value?.toString()}
+                          value={toolResult.value.toString()}
                           disabled
                           taskAttemptId={taskAttemptId}
                         />
                       )}
-                    {actionType.result?.type.type === 'json' &&
-                      renderJson(actionType.result.value)}
+                    {toolResult.type.type === 'json' &&
+                      renderJson(toolResult.value)}
                   </div>
                 </>
               )}
@@ -963,6 +1100,18 @@ function DisplayConversationEntry({
 
   if (isToolUse) {
     return renderToolUse();
+  }
+
+  if (entryType.type === 'thinking') {
+    return (
+      <div className="px-4 py-2 text-sm">
+        <ThinkingEntry
+          content={isNormalizedEntry(entry) ? entry.content : ''}
+          expansionKey={expansionKey}
+          taskAttemptId={taskAttempt?.id}
+        />
+      </div>
+    );
   }
 
   if (isSystem || isError) {

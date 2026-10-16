@@ -69,6 +69,13 @@
       "createdTask": "タスクを作成: {{description}}",
       "todoOperation": "{{operation}} Todo"
     },
+    "toolStatus": {
+      "running": "実行中",
+      "failed": "失敗",
+      "denied": "拒否",
+      "timedOut": "タイムアウト",
+      "pendingApproval": "承認待ち"
+    },
     "fixScript": "スクリプトを修正",
     "subagent": {
       "defaultType": "サブエージェント"

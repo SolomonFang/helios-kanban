@@ -58,6 +58,13 @@
       "createdTask": "创建任务：{{description}}",
       "todoOperation": "{{operation}} 待办事项"
     },
+    "toolStatus": {
+      "running": "运行中",
+      "failed": "失败",
+      "denied": "已拒绝",
+      "timedOut": "已超时",
+      "pendingApproval": "等待审批"
+    },
     "fixScript": "修复脚本",
     "question": {
       "awaiting": "等待回复…",

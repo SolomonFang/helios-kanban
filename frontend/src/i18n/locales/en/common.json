@@ -60,6 +60,13 @@
       "createdTask": "Created task: {{description}}",
       "todoOperation": "{{operation}} todos"
     },
+    "toolStatus": {
+      "running": "Running",
+      "failed": "Failed",
+      "denied": "Denied",
+      "timedOut": "Timed out",
+      "pendingApproval": "Waiting for approval"
+    },
     "fixScript": "Fix Script",
     "question": {
       "awaiting": "Awaiting response...",
