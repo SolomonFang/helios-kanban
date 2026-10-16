@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { LegacyMarkdown } from './LegacyMarkdown';
 import {
@@ -18,12 +19,15 @@ import {
   AlertCircle,
   Bot,
   Brain,
+  Check,
   CheckSquare,
   ChevronDown,
+  Clipboard,
   Hammer,
   Edit,
   Eye,
   Globe,
+  Maximize2,
   MessageCircleQuestion,
   Plus,
   Search,
@@ -43,6 +47,13 @@ import { cn } from '@/lib/utils';
 import { useRetryUi } from '@/contexts/RetryUiContext';
 import { approvalsApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { writeClipboardViaBridge } from '@/vscode/bridge';
 import {
   ScriptFixerDialog,
   type ScriptType,
@@ -585,6 +596,19 @@ const ToolCallCard: React.FC<{
   );
   const effectiveExpanded = forceExpanded || expanded;
 
+  const [outputDialogOpen, setOutputDialogOpen] = useState(false);
+  const [outputCopied, setOutputCopied] = useState(false);
+  const handleCopyOutput = useCallback(async () => {
+    if (!output) return;
+    try {
+      await writeClipboardViaBridge(output);
+      setOutputCopied(true);
+      window.setTimeout(() => setOutputCopied(false), 600);
+    } catch {
+      // The bridge already handles clipboard fallbacks.
+    }
+  }, [output]);
+
   // Also auto-expand when a running command fails mid-stream. Only do this
   // once per failure so the user can still collapse it afterwards.
   const autoExpandedErrorRef = useRef(false);
@@ -687,8 +711,32 @@ const ToolCallCard: React.FC<{
 
               {output && (
                 <>
-                  <div className="font-normal uppercase bg-background border-y border-dashed px-2 py-1">
-                    {t('conversation.output')}
+                  <div className="font-normal uppercase bg-background border-y border-dashed px-2 py-1 flex items-center justify-between gap-2">
+                    <span>{t('conversation.output')}</span>
+                    <span className="flex items-center gap-1 normal-case">
+                      <button
+                        type="button"
+                        className="p-1 rounded hover:bg-accent"
+                        title={t('conversation.copyOutput')}
+                        aria-label={t('conversation.copyOutput')}
+                        onClick={handleCopyOutput}
+                      >
+                        {outputCopied ? (
+                          <Check className="h-3.5 w-3.5 text-success" />
+                        ) : (
+                          <Clipboard className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className="p-1 rounded hover:bg-accent"
+                        title={t('conversation.expandOutput')}
+                        aria-label={t('conversation.expandOutput')}
+                        onClick={() => setOutputDialogOpen(true)}
+                      >
+                        <Maximize2 className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
                   </div>
                   <div className="px-2 py-1">
                     <RawLogText content={output} linkifyUrls={linkifyUrls} />
@@ -731,6 +779,37 @@ const ToolCallCard: React.FC<{
           )}
         </div>
       )}
+      {outputDialogOpen &&
+        createPortal(
+          <Dialog open={outputDialogOpen} onOpenChange={setOutputDialogOpen}>
+            <DialogContent className="max-w-4xl h-[80vh]">
+              <DialogHeader>
+                <DialogTitle>{t('conversation.output')}</DialogTitle>
+              </DialogHeader>
+              <div className="flex-1 min-h-0 overflow-y-auto border px-3 py-2">
+                <RawLogText content={output ?? ''} linkifyUrls={linkifyUrls} />
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCopyOutput}
+                >
+                  {outputCopied ? (
+                    <Check className="h-4 w-4 mr-2 text-success" />
+                  ) : (
+                    <Clipboard className="h-4 w-4 mr-2" />
+                  )}
+                  {outputCopied
+                    ? t('actions.copied')
+                    : t('conversation.copyOutput')}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>,
+          document.body
+        )}
     </div>
   );
 };

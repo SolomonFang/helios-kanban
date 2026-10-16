@@ -45,6 +45,10 @@
   },
   "conversation": {
     "args": "인자",
+    "backToLatest": "최신으로 이동",
+    "newOutput": "새 출력",
+    "copyOutput": "출력 복사",
+    "expandOutput": "전체 출력 보기",
     "deniedByUser": "{{toolName}} 사용자에 의해 거부됨",
     "output": "출력",
     "plan": "계획",

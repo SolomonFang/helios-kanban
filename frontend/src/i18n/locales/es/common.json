@@ -45,6 +45,10 @@
   },
   "conversation": {
     "args": "Argumentos",
+    "backToLatest": "Volver a lo más reciente",
+    "newOutput": "Nueva salida",
+    "copyOutput": "Copiar salida",
+    "expandOutput": "Ver salida completa",
     "deniedByUser": "{{toolName}} denegado por el usuario",
     "output": "Salida",
     "plan": "Plan",

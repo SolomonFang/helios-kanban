@@ -1,5 +1,6 @@
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import DisplayConversationEntry from '../NormalizedConversation/DisplayConversationEntry';
 import {
@@ -11,7 +12,8 @@ import {
   PatchTypeWithKey,
   useConversationHistory,
 } from '@/hooks/useConversationHistory';
-import { Loader2 } from 'lucide-react';
+import { ArrowDown, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { TaskWithAttemptStatus, type TokenUsageInfo } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { ApprovalFormProvider } from '@/contexts/ApprovalFormContext';
@@ -40,11 +42,15 @@ function filterRenderableEntries(
 }
 
 const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
+  const { t } = useTranslation('common');
   const [data, setData] = useState<PatchTypeWithKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [atBottom, setAtBottom] = useState(true);
+  const [hasNewOutput, setHasNewOutput] = useState(false);
   const { setEntries, reset } = useEntriesActions();
   const { setTokenUsageInfo } = useSetTokenUsageInfo();
+  const atBottomRef = useRef(atBottom);
+  atBottomRef.current = atBottom;
   const pendingUpdateRef = useRef<{
     entries: PatchTypeWithKey[];
     addType: AddEntryType;
@@ -61,6 +67,9 @@ const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
     if (!pending) return;
 
     const renderableEntries = filterRenderableEntries(pending.entries);
+    if (!atBottomRef.current) {
+      setHasNewOutput(true);
+    }
     setData(renderableEntries);
     setEntries(renderableEntries);
     setLoading(pending.loading);
@@ -75,6 +84,8 @@ const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
     setLoading(true);
     setData([]);
     setAtBottom(true);
+    atBottomRef.current = true;
+    setHasNewOutput(false);
     reset();
   }, [attempt.id, reset]);
 
@@ -115,6 +126,22 @@ const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const didInitScrollRef = useRef(false);
   const prevLenRef = useRef(0);
+
+  const handleAtBottomChange = useCallback((bottom: boolean) => {
+    atBottomRef.current = bottom;
+    setAtBottom(bottom);
+    if (bottom) setHasNewOutput(false);
+  }, []);
+
+  const scrollToLatest = useCallback(() => {
+    if (data.length === 0) return;
+    setHasNewOutput(false);
+    virtuosoRef.current?.scrollToIndex({
+      index: data.length - 1,
+      align: 'end',
+      behavior: 'smooth',
+    });
+  }, [data.length]);
 
   // 首次出现条目：跳到底部，初始化“跟随”状态。
   useEffect(() => {
@@ -166,7 +193,7 @@ const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
           itemContent={(_index, item) => (
             <ItemRow item={item} context={messageListContext} />
           )}
-          atBottomStateChange={setAtBottom}
+          atBottomStateChange={handleAtBottomChange}
           followOutput={atBottom ? 'smooth' : false}
           components={{
             Header: () => <div className="h-2" />,
@@ -175,10 +202,24 @@ const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
           // 加大下方视口，避免流式追加时频繁重新测量导致卡顿。
           increaseViewportBy={{ top: 0, bottom: 600 }}
         />
+        {!loading && !atBottom && data.length > 0 && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="absolute bottom-4 right-4 z-10 shadow-sm"
+            onClick={scrollToLatest}
+          >
+            <ArrowDown className="h-4 w-4 mr-1.5" />
+            {hasNewOutput
+              ? t('conversation.newOutput')
+              : t('conversation.backToLatest')}
+          </Button>
+        )}
         {loading && (
           <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-primary">
             <Loader2 className="h-8 w-8 animate-spin" />
-            <p>Loading History</p>
+            <p>{t('states.loadingHistory')}</p>
           </div>
         )}
       </div>
