@@ -52,7 +52,7 @@ const FileChangeRenderer = ({
   const effectiveExpanded = forceExpanded || expanded;
 
   const theme = getActualTheme(config?.theme);
-  const headerClass = cn('flex items-center gap-1.5 text-secondary-foreground');
+  const headerClass = cn('flex items-center gap-1.5 text-foreground');
 
   const statusIcon =
     statusAppearance === 'denied' ? (
@@ -66,7 +66,12 @@ const FileChangeRenderer = ({
       <div>
         <div className={headerClass}>
           {statusIcon}
-          <p className="text-sm font-light overflow-x-auto flex-1">{path}</p>
+          <p
+            className="min-w-0 flex-1 truncate text-sm font-light"
+            title={path}
+          >
+            {path}
+          </p>
         </div>
       </div>
     );
@@ -88,10 +93,11 @@ const FileChangeRenderer = ({
   }
 
   // Title row content and whether the row is expandable
-  const { titleNode, icon, expandable } = (() => {
+  const { titleNode, titleText, icon, expandable } = (() => {
     if (isDelete(change)) {
       return {
         titleNode: path,
+        titleText: path,
         icon: <Trash2 className="h-3 w-3" />,
         expandable: false,
       };
@@ -104,6 +110,7 @@ const FileChangeRenderer = ({
             Rename {path} to {change.new_path}
           </>
         ),
+        titleText: `Rename ${path} to ${change.new_path}`,
         icon: <ArrowRight className="h-3 w-3" />,
         expandable: false,
       };
@@ -112,6 +119,7 @@ const FileChangeRenderer = ({
     if (isWrite(change)) {
       return {
         titleNode: path,
+        titleText: path,
         icon: <FilePlus2 className="h-3 w-3" />,
         expandable: true,
       };
@@ -120,6 +128,7 @@ const FileChangeRenderer = ({
     // No fallback: render nothing for unknown change types
     return {
       titleNode: null,
+      titleText: null,
       icon: null,
       expandable: false,
     };
@@ -136,7 +145,8 @@ const FileChangeRenderer = ({
         {icon}
         <p
           onClick={() => expandable && setExpanded()}
-          className="text-sm font-mono overflow-x-auto flex-1 cursor-pointer"
+          className="min-w-0 flex-1 truncate text-sm font-mono cursor-pointer"
+          title={titleText ?? undefined}
         >
           {titleNode}
         </p>

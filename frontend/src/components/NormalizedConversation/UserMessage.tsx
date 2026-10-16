@@ -55,7 +55,7 @@ const UserMessage = ({
   return (
     <div className={`py-2 ${greyed ? 'opacity-50 pointer-events-none' : ''}`}>
       <div className="bg-background px-4 py-2 text-sm">
-        <div className="py-3">
+        <div>
           {showRetryEditor && taskAttempt ? (
             <RetryEditorInline
               attempt={taskAttempt}
@@ -67,7 +67,7 @@ const UserMessage = ({
             <LegacyMarkdown
               value={content}
               disabled
-              className="whitespace-pre-wrap break-words flex flex-col gap-1 font-light"
+              className="whitespace-pre-wrap break-words font-light"
               taskAttemptId={taskAttempt?.id}
               onEdit={canRetry ? startRetry : undefined}
             />

@@ -169,10 +169,10 @@ const getStatusIndicator = (entryType: NormalizedEntryType) => {
   if (!statusVisualisation) return null;
 
   const colorMap: Record<ToolStatusVisualisation, string> = {
-    success: 'bg-green-300',
-    error: 'bg-red-300',
+    success: 'bg-success',
+    error: 'bg-destructive',
     pending: 'bg-primary-foreground/50',
-    warning: 'bg-amber-400',
+    warning: 'bg-warning',
   };
 
   return (
@@ -245,8 +245,8 @@ const MessageCard: React.FC<{
   onToggle?: () => void;
 }> = ({ children, variant, expanded, onToggle }) => {
   const frameBase =
-    'border px-3 py-2 w-full cursor-pointer  bg-[hsl(var(--card))] border-[hsl(var(--border))]';
-  const systemTheme = 'border-400/40 text-zinc-500';
+    'border px-3 py-2 w-full cursor-pointer bg-[hsl(var(--card))] border-[hsl(var(--border))]';
+  const systemTheme = 'text-muted-foreground';
   const errorTheme =
     'border-red-400/40 bg-red-50 dark:bg-[hsl(var(--card))] text-[hsl(var(--foreground))]';
 
@@ -257,14 +257,16 @@ const MessageCard: React.FC<{
       }`}
       onClick={onToggle}
     >
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-start gap-1.5">
         <div className="min-w-0 flex-1">{children}</div>
         {onToggle && (
-          <ExpandChevron
-            expanded={!!expanded}
-            onClick={onToggle}
-            variant={variant}
-          />
+          <div className="mt-0.5 shrink-0">
+            <ExpandChevron
+              expanded={!!expanded}
+              onClick={onToggle}
+              variant={variant}
+            />
+          </div>
         )}
       </div>
     </div>
@@ -301,7 +303,7 @@ const ThinkingEntry: React.FC<{
           <LegacyMarkdown
             value={content}
             disabled
-            className="whitespace-pre-wrap break-words flex flex-col gap-1 font-light"
+            className="whitespace-pre-wrap break-words font-light"
             taskAttemptId={taskAttemptId}
           />
         </div>
@@ -323,7 +325,7 @@ const ExpandChevron: React.FC<{
 }> = ({ expanded, onClick, variant }) => {
   const color =
     variant === 'system'
-      ? 'text-700 dark:text-300'
+      ? 'text-muted-foreground'
       : 'text-red-700 dark:text-red-300';
 
   return (
@@ -660,7 +662,7 @@ const ToolCallCard: React.FC<{
     : {};
 
   const headerClassName = cn(
-    'w-full flex items-center gap-1.5 text-left text-secondary-foreground'
+    'w-full flex items-center gap-1.5 text-left text-foreground'
   );
 
   return (
@@ -1000,7 +1002,7 @@ function DisplayConversationEntry({
           <LegacyMarkdown
             value={entry.content}
             disabled
-            className="whitespace-pre-wrap break-words flex flex-col gap-1 font-light py-3"
+            className="whitespace-pre-wrap break-words font-light"
             taskAttemptId={taskAttempt?.id}
           />
         </div>
@@ -1248,7 +1250,7 @@ function DisplayConversationEntry({
           <LegacyMarkdown
             value={isNormalizedEntry(entry) ? entry.content : ''}
             disabled
-            className="whitespace-pre-wrap break-words flex flex-col gap-1 font-light"
+            className="whitespace-pre-wrap break-words font-light"
             taskAttemptId={taskAttempt?.id}
           />
         ) : isNormalizedEntry(entry) ? (

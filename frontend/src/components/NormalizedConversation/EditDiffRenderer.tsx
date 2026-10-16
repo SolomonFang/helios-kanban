@@ -92,7 +92,7 @@ function EditDiffRenderer({
   }, [hunks, path]);
 
   const headerClass = cn(
-    'flex items-center gap-1.5 text-secondary-foreground',
+    'flex items-center gap-1.5 text-foreground',
     statusAppearance === 'denied' && 'text-red-700 dark:text-red-300',
     statusAppearance === 'timed_out' && 'text-amber-700 dark:text-amber-200'
   );
@@ -101,18 +101,26 @@ function EditDiffRenderer({
     <div>
       <div className={headerClass}>
         <SquarePen className="h-3 w-3" />
-        <p
+        <div
           onClick={() => setExpanded()}
-          className="text-sm font-mono overflow-x-auto flex-1 cursor-pointer"
+          className="min-w-0 flex-1 flex items-center gap-1.5 text-sm font-mono cursor-pointer"
         >
-          {path}{' '}
-          <span style={{ color: 'hsl(var(--console-success))' }}>
+          <span className="min-w-0 truncate" title={path}>
+            {path}
+          </span>
+          <span
+            className="shrink-0 whitespace-nowrap"
+            style={{ color: 'hsl(var(--console-success))' }}
+          >
             +{additions}
-          </span>{' '}
-          <span style={{ color: 'hsl(var(--console-error))' }}>
+          </span>
+          <span
+            className="shrink-0 whitespace-nowrap"
+            style={{ color: 'hsl(var(--console-error))' }}
+          >
             -{deletions}
           </span>
-        </p>
+        </div>
       </div>
 
       {effectiveExpanded && (

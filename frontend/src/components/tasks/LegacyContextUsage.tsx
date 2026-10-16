@@ -34,7 +34,7 @@ export function LegacyContextUsage() {
 
   return (
     <div
-      className="flex items-center gap-1 px-1 text-xs text-muted-foreground cursor-help"
+      className="flex shrink-0 items-center gap-1 px-1 text-xs text-muted-foreground cursor-help"
       title={t('contextUsage.tooltip', {
         percentage: roundedPercentage,
         used,

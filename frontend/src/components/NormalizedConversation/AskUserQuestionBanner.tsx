@@ -74,7 +74,7 @@ function OptionButton({
       aria-pressed={multiSelect ? selected : undefined}
       className={cn(
         'group w-full text-left rounded-md border px-3 py-2.5 transition-all',
-        'flex items-center gap-2.5',
+        'flex items-start gap-2.5',
         selected
           ? 'border-blue-400/70 bg-blue-50/80 dark:bg-blue-950/40 shadow-sm ring-1 ring-blue-400/25'
           : 'border-border/70 bg-background/80 hover:border-blue-400/40 hover:bg-blue-50/40 dark:hover:bg-blue-950/20',
@@ -83,7 +83,7 @@ function OptionButton({
     >
       <span
         className={cn(
-          'flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors',
+          'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors',
           multiSelect ? 'rounded-sm' : 'rounded-full',
           selected
             ? 'border-blue-500 bg-blue-500 text-white'

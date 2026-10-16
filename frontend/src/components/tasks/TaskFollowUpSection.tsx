@@ -839,8 +839,8 @@ export function TaskFollowUpSection({
 
       {/* Always-visible action bar */}
       <div className="p-4">
-        <div className="flex flex-row gap-2 items-center">
-          <div className="flex-1 flex gap-2 items-center">
+        <div className="flex flex-row flex-wrap gap-2 items-center">
+          <div className="min-w-0 flex-1 flex gap-2 items-center">
             <VariantSelector
               currentProfile={currentProfile}
               selectedVariant={selectedVariant}
