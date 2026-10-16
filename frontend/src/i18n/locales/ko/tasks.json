@@ -240,6 +240,8 @@
     "queue": "대기열에 추가",
     "cancelQueue": "대기열 취소",
     "queuedMessage": "메시지가 대기열에 추가됨 - 현재 실행이 완료되면 실행됩니다",
+    "queuedEditHint": "메시지를 편집하면 대기열이 취소되고 초안으로 유지됩니다",
+    "queueCanceledForEdit": "대기열이 취소되었습니다. 수정 내용은 초안으로 저장되었습니다. 다시 대기열에 추가하여 실행을 예약하세요",
     "runSetupScript": "설정 스크립트 실행",
     "runCleanupScript": "정리 스크립트 실행",
     "runArchiveScript": "아카이브 스크립트 실행",

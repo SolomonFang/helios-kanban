@@ -238,6 +238,8 @@
     "queue": "佇列",
     "cancelQueue": "取消佇列",
     "queuedMessage": "訊息已加入佇列 - 會在目前執行完成後處理",
+    "queuedEditHint": "編輯訊息會取消佇列，並保留為草稿",
+    "queueCanceledForEdit": "已取消佇列。修改已儲存為草稿，請重新加入佇列以安排執行",
     "runSetupScript": "執行設定腳本",
     "runCleanupScript": "執行清理腳本",
     "runArchiveScript": "執行封存腳本",

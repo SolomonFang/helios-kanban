@@ -238,6 +238,8 @@
     "queue": "队列",
     "cancelQueue": "取消队列",
     "queuedMessage": "消息已排队 - 将在当前运行完成时执行",
+    "queuedEditHint": "编辑消息会取消排队，并保留为草稿",
+    "queueCanceledForEdit": "已取消排队。修改已保存为草稿，请重新排队以安排执行",
     "runSetupScript": "运行设置脚本",
     "runCleanupScript": "运行清理脚本",
     "runArchiveScript": "运行归档脚本",

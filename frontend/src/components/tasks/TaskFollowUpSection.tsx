@@ -259,6 +259,11 @@ export function TaskFollowUpSection({
   const queuedMessage = isQueued
     ? (queueStatus as Extract<QueueStatus, { status: 'queued' }>).message
     : null;
+  const [queueEditNotice, setQueueEditNotice] = useState(false);
+
+  useEffect(() => {
+    setQueueEditNotice(false);
+  }, [sessionId]);
 
   const queueMutation = useMutation({
     mutationFn: ({
@@ -374,6 +379,7 @@ export function TaskFollowUpSection({
       onAfterSendCleanup: () => {
         cancelDebouncedSave(); // Cancel any pending debounced save to avoid race condition
         setLocalMessage(''); // Clear local state immediately
+        setQueueEditNotice(false);
         // Scratch deletion is handled by the backend when the queued message is consumed
       },
     });
@@ -440,6 +446,7 @@ export function TaskFollowUpSection({
 
   // Handler to queue the current message for execution after agent finishes
   const handleQueueMessage = useCallback(async () => {
+    if (!canTypeFollowUp || !latestProfileId) return;
     if (
       !localMessage.trim() &&
       !conflictResolutionInstructions &&
@@ -461,13 +468,13 @@ export function TaskFollowUpSection({
         Boolean
       )
     );
-    if (latestProfileId) {
-      await queueMessage(prompt, {
-        executor: latestProfileId.executor,
-        variant: selectedVariant,
-      });
-    }
+    await queueMessage(prompt, {
+      executor: latestProfileId.executor,
+      variant: selectedVariant,
+    });
+    setQueueEditNotice(false);
   }, [
+    canTypeFollowUp,
     localMessage,
     conflictResolutionInstructions,
     reviewMarkdown,
@@ -537,6 +544,7 @@ export function TaskFollowUpSection({
             queuedMessage: currentQueuedMessage,
           } = getQueueState();
           if (currentlyQueued && currentQueuedMessage) {
+            setQueueEditNotice(true);
             cancelMutation.mutate();
             const base = currentQueuedMessage.data.message;
             const newMessage = base
@@ -619,6 +627,7 @@ export function TaskFollowUpSection({
       const { isQueued: currentlyQueued, queuedMessage: currentQueuedMessage } =
         getQueueState();
       if (currentlyQueued && currentQueuedMessage) {
+        setQueueEditNotice(true);
         cancelMutation.mutate();
         const base = currentQueuedMessage.data.message;
         const newMessage = base ? `${base}\n\n${markdown}` : markdown;
@@ -637,9 +646,11 @@ export function TaskFollowUpSection({
   // Stable onChange handler for WYSIWYGEditor
   const handleEditorChange = useCallback(
     (value: string) => {
-      // Auto-cancel queue when user starts editing
+      // Editing a queued message cancels the queue but keeps the text as a
+      // draft; make that state transition explicit in the UI.
       const { isQueued: currentlyQueued } = getQueueState();
       if (currentlyQueued) {
+        setQueueEditNotice(true);
         cancelMutation.mutate();
       }
       setLocalMessage(value); // Immediate update for UI responsiveness
@@ -766,10 +777,33 @@ export function TaskFollowUpSection({
             {isQueued && queuedMessage && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted p-3 rounded-md border">
                 <Clock className="h-4 w-4 flex-shrink-0" />
-                <div className="font-medium">
+                <div>
+                  <div className="font-medium">
+                    {t(
+                      'followUp.queuedMessage',
+                      'Message queued - will execute when current run finishes'
+                    )}
+                  </div>
+                  <div className="text-xs">
+                    {t(
+                      'followUp.queuedEditHint',
+                      'Editing the message will cancel the queue and keep it as a draft'
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {queueEditNotice && !isQueued && (
+              <div
+                className="flex items-center gap-2 text-sm text-muted-foreground bg-muted p-3 rounded-md border"
+                role="status"
+              >
+                <Clock className="h-4 w-4 flex-shrink-0" />
+                <div>
                   {t(
-                    'followUp.queuedMessage',
-                    'Message queued - will execute when current run finishes'
+                    'followUp.queueCanceledForEdit',
+                    'Queue canceled. Your edits are saved as a draft; queue again to schedule them'
                   )}
                 </div>
               </div>
@@ -909,6 +943,8 @@ export function TaskFollowUpSection({
                   onClick={handleQueueMessage}
                   disabled={
                     isQueueLoading ||
+                    !canTypeFollowUp ||
+                    !latestProfileId ||
                     (!localMessage.trim() &&
                       !conflictResolutionInstructions &&
                       !reviewMarkdown &&

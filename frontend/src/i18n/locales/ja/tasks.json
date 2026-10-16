@@ -240,6 +240,8 @@
     "queue": "キューに追加",
     "cancelQueue": "キューをキャンセル",
     "queuedMessage": "メッセージがキューに追加されました - 現在の実行が完了すると実行されます",
+    "queuedEditHint": "メッセージを編集するとキューが解除され、下書きとして保持されます",
+    "queueCanceledForEdit": "キューを解除しました。編集内容は下書きとして保存されています。再度キューに追加して実行を予約してください",
     "runSetupScript": "セットアップスクリプトを実行",
     "runCleanupScript": "クリーンアップスクリプトを実行",
     "runArchiveScript": "アーカイブスクリプトを実行",

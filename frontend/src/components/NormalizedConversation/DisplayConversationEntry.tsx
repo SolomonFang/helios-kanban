@@ -1068,6 +1068,8 @@ function DisplayConversationEntry({
               onSubmitAnswers={handleSubmitAnswers}
               isSubmitting={isAnswerSubmitting}
               isTimedOut={false}
+              requestedAt={status.requested_at}
+              timeoutAt={status.timeout_at}
               error={answerError}
             />
           </div>
@@ -1079,6 +1081,11 @@ function DisplayConversationEntry({
         <div
           className={`px-4 py-2 text-sm space-y-3 ${greyed ? 'opacity-50 pointer-events-none' : ''}`}
         >
+          {status.status === 'timed_out' && (
+            <div className="border border-amber-200/50 bg-amber-50/80 px-3 py-2 text-amber-800 dark:border-amber-800/40 dark:bg-amber-950/25 dark:text-amber-200">
+              {t('conversation.question.timedOut')}
+            </div>
+          )}
           <div
             className={`whitespace-pre-wrap break-words text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/20 px-3 py-2 border-l-4 border-blue-400`}
           >

@@ -225,6 +225,8 @@
     "queue": "Queue",
     "cancelQueue": "Cancel Queue",
     "queuedMessage": "Message queued - will execute when current run finishes",
+    "queuedEditHint": "Editing the message will cancel the queue and keep it as a draft",
+    "queueCanceledForEdit": "Queue canceled. Your edits are saved as a draft; queue again to schedule them",
     "runSetupScript": "Run setup script",
     "runCleanupScript": "Run cleanup script",
     "runArchiveScript": "Run archive script",

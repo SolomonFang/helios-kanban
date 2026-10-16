@@ -69,6 +69,10 @@
       "timedOut": "Expiré",
       "pendingApproval": "En attente d'approbation"
     },
+    "approvalStatus": {
+      "timeRemaining": "{{time}} restant",
+      "timedOut": "Demande d'approbation expirée"
+    },
     "fixScript": "Corriger le script",
     "subagent": {
       "defaultType": "Sous-agent"

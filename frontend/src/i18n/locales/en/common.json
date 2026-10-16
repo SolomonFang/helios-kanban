@@ -71,6 +71,10 @@
       "timedOut": "Timed out",
       "pendingApproval": "Waiting for approval"
     },
+    "approvalStatus": {
+      "timeRemaining": "{{time}} left",
+      "timedOut": "Approval timed out"
+    },
     "fixScript": "Fix Script",
     "question": {
       "awaiting": "Awaiting response...",

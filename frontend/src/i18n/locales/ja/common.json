@@ -80,6 +80,10 @@
       "timedOut": "タイムアウト",
       "pendingApproval": "承認待ち"
     },
+    "approvalStatus": {
+      "timeRemaining": "残り {{time}}",
+      "timedOut": "承認がタイムアウトしました"
+    },
     "fixScript": "スクリプトを修正",
     "subagent": {
       "defaultType": "サブエージェント"

@@ -80,6 +80,10 @@
       "timedOut": "Tiempo agotado",
       "pendingApproval": "Esperando aprobación"
     },
+    "approvalStatus": {
+      "timeRemaining": "{{time}} restante",
+      "timedOut": "Aprobación caducada"
+    },
     "fixScript": "Corregir Script",
     "subagent": {
       "defaultType": "Subagente"

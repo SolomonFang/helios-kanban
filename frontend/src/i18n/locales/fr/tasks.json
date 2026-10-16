@@ -225,6 +225,8 @@
     "queue": "File d'attente",
     "cancelQueue": "Annuler la file",
     "queuedMessage": "Message en file d'attente - s'exécutera lorsque l'exécution actuelle sera terminée",
+    "queuedEditHint": "Modifier le message annulera la file d'attente et le conservera comme brouillon",
+    "queueCanceledForEdit": "File d'attente annulée. Vos modifications sont enregistrées comme brouillon ; remettez-les en file d'attente pour les planifier",
     "runSetupScript": "Exécuter le script de configuration",
     "runCleanupScript": "Exécuter le script de nettoyage",
     "runArchiveScript": "Exécuter le script d'archivage",

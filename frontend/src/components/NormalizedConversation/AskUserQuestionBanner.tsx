@@ -12,6 +12,10 @@ import type { AskUserQuestionItem, QuestionAnswer } from 'shared/types';
 import { Check, Loader2, MessageCircleQuestion } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import {
+  formatApprovalTime,
+  useApprovalCountdown,
+} from '@/hooks/useApprovalCountdown';
 
 export interface AskUserQuestionBannerHandle {
   submitCustomAnswer: (text: string) => void;
@@ -22,6 +26,8 @@ interface Props {
   onSubmitAnswers: (answers: QuestionAnswer[]) => void;
   isSubmitting: boolean;
   isTimedOut: boolean;
+  requestedAt?: string;
+  timeoutAt?: string;
   error: string | null;
 }
 
@@ -108,7 +114,15 @@ function OptionButton({
 
 const AskUserQuestionBanner = forwardRef<AskUserQuestionBannerHandle, Props>(
   function AskUserQuestionBanner(
-    { questions, onSubmitAnswers, isSubmitting, isTimedOut, error },
+    {
+      questions,
+      onSubmitAnswers,
+      isSubmitting,
+      isTimedOut,
+      requestedAt,
+      timeoutAt,
+      error,
+    },
     ref
   ) {
     const { t } = useTranslation('common');
@@ -118,6 +132,13 @@ const AskUserQuestionBanner = forwardRef<AskUserQuestionBannerHandle, Props>(
       new Set()
     );
     const [customText, setCustomText] = useState('');
+    const hasTimeout = Boolean(timeoutAt);
+    const { timeLeft } = useApprovalCountdown(
+      requestedAt ?? timeoutAt ?? 0,
+      timeoutAt ?? 0,
+      isTimedOut || isSubmitting || !hasTimeout
+    );
+    const isExpired = isTimedOut || (hasTimeout && timeLeft <= 0);
 
     const questionsKey = useMemo(
       () => questions.map((q) => q.question).join('\0'),
@@ -139,7 +160,7 @@ const AskUserQuestionBanner = forwardRef<AskUserQuestionBannerHandle, Props>(
       currentIndex < questions.length ? questions[currentIndex] : null;
     const isAllAnswered = currentIndex >= questions.length;
     const isLastQuestion = currentIndex === questions.length - 1;
-    const disabled = isSubmitting || isTimedOut;
+    const disabled = isSubmitting || isExpired;
     const totalQuestions = questions.length;
 
     useEffect(() => {
@@ -241,6 +262,13 @@ const AskUserQuestionBanner = forwardRef<AskUserQuestionBannerHandle, Props>(
           <span className="min-w-0 flex-1 font-medium text-blue-900 dark:text-blue-100">
             {t('conversation.question.askUser.title')}
           </span>
+          {hasTimeout && !isExpired && !isSubmitting && (
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+              {t('conversation.approvalStatus.timeRemaining', {
+                time: formatApprovalTime(timeLeft),
+              })}
+            </span>
+          )}
           {totalQuestions > 1 && (
             <span className="shrink-0 rounded-full bg-blue-100/90 px-2 py-0.5 text-sm font-medium tabular-nums text-blue-700 dark:bg-blue-900/60 dark:text-blue-200">
               {t('conversation.question.askUser.progress', {
@@ -251,7 +279,7 @@ const AskUserQuestionBanner = forwardRef<AskUserQuestionBannerHandle, Props>(
           )}
         </div>
 
-        {isTimedOut && (
+        {isExpired && (
           <div className="border-b border-amber-200/50 bg-amber-50/80 px-3 py-2 text-amber-800 dark:border-amber-800/40 dark:bg-amber-950/25 dark:text-amber-200">
             {t('conversation.question.timedOut')}
           </div>

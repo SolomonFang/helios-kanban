@@ -240,6 +240,8 @@
     "queue": "Encolar",
     "cancelQueue": "Cancelar cola",
     "queuedMessage": "Mensaje en cola - se ejecutará cuando finalice la ejecución actual",
+    "queuedEditHint": "Editar el mensaje cancelará la cola y lo conservará como borrador",
+    "queueCanceledForEdit": "Cola cancelada. Tus cambios se guardaron como borrador; vuelve a ponerlos en cola para programarlos",
     "runSetupScript": "Ejecutar script de configuración",
     "runCleanupScript": "Ejecutar script de limpieza",
     "runArchiveScript": "Ejecutar script de archivo",

@@ -69,6 +69,10 @@
       "timedOut": "已超时",
       "pendingApproval": "等待审批"
     },
+    "approvalStatus": {
+      "timeRemaining": "剩余 {{time}}",
+      "timedOut": "审批已超时"
+    },
     "fixScript": "修复脚本",
     "question": {
       "awaiting": "等待回复…",

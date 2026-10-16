@@ -1,12 +1,6 @@
-import {
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ApprovalOutcome, ToolStatus } from 'shared/types';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,6 +18,10 @@ import { TabNavContext } from '@/contexts/TabNavigationContext';
 import { useKeyApproveRequest, useKeyDenyApproval, Scope } from '@/keyboard';
 import { useProject } from '@/contexts/ProjectContext';
 import { useApprovalForm } from '@/contexts/ApprovalFormContext';
+import {
+  formatApprovalTime,
+  useApprovalCountdown,
+} from '@/hooks/useApprovalCountdown';
 
 const DEFAULT_DENIAL_REASON = 'User denied this tool use request.';
 
@@ -32,44 +30,6 @@ interface PendingApprovalEntryProps {
   pendingStatus: Extract<ToolStatus, { status: 'pending_approval' }>;
   executionProcessId?: string;
   children: ReactNode;
-}
-
-function useApprovalCountdown(
-  requestedAt: string | number | Date,
-  timeoutAt: string | number | Date,
-  paused: boolean
-) {
-  const totalSeconds = useMemo(() => {
-    const total = Math.floor(
-      (new Date(timeoutAt).getTime() - new Date(requestedAt).getTime()) / 1000
-    );
-    return Math.max(1, total);
-  }, [requestedAt, timeoutAt]);
-
-  const [timeLeft, setTimeLeft] = useState<number>(() => {
-    const remaining = new Date(timeoutAt).getTime() - Date.now();
-    return Math.max(0, Math.floor(remaining / 1000));
-  });
-
-  useEffect(() => {
-    if (paused) return;
-    const id = window.setInterval(() => {
-      const remaining = new Date(timeoutAt).getTime() - Date.now();
-      const next = Math.max(0, Math.floor(remaining / 1000));
-      setTimeLeft(next);
-      if (next <= 0) window.clearInterval(id);
-    }, 1000);
-
-    return () => window.clearInterval(id);
-  }, [timeoutAt, paused]);
-
-  const percent = useMemo(
-    () =>
-      Math.max(0, Math.min(100, Math.round((timeLeft / totalSeconds) * 100))),
-    [timeLeft, totalSeconds]
-  );
-
-  return { timeLeft, percent };
 }
 
 function ActionButtons({
@@ -173,6 +133,7 @@ const PendingApprovalEntry = ({
   executionProcessId,
   children,
 }: PendingApprovalEntryProps) => {
+  const { t } = useTranslation('common');
   const [isResponding, setIsResponding] = useState(false);
   const [hasResponded, setHasResponded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -325,6 +286,21 @@ const PendingApprovalEntry = ({
                 {!isEnteringReason && (
                   <span className="text-muted-foreground">
                     Would you like to approve this?
+                  </span>
+                )}
+                {!hasResponded && (
+                  <span
+                    className={
+                      timeLeft <= 0
+                        ? 'text-amber-600'
+                        : 'text-muted-foreground tabular-nums'
+                    }
+                  >
+                    {timeLeft <= 0
+                      ? t('conversation.approvalStatus.timedOut')
+                      : t('conversation.approvalStatus.timeRemaining', {
+                          time: formatApprovalTime(timeLeft),
+                        })}
                   </span>
                 )}
               </div>
