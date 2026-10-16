@@ -114,47 +114,49 @@ export const MarkdownBlock = memo(
 
       return compiler(content, {
         overrides: {
-          p: (props: object) => <p className={theme.paragraph} {...props} />,
+          // Keep className AFTER {...props}: markdown-to-jsx may pass
+          // className: undefined, which would otherwise erase our theme.
+          p: (props: object) => <p {...props} className={theme.paragraph} />,
           h1: (props: object) => (
-            <h1 className={theme.headings.h1} {...props} />
+            <h1 {...props} className={theme.headings.h1} />
           ),
           h2: (props: object) => (
-            <h2 className={theme.headings.h2} {...props} />
+            <h2 {...props} className={theme.headings.h2} />
           ),
           h3: (props: object) => (
-            <h3 className={theme.headings.h3} {...props} />
+            <h3 {...props} className={theme.headings.h3} />
           ),
           h4: (props: object) => (
-            <h4 className={theme.headings.h4} {...props} />
+            <h4 {...props} className={theme.headings.h4} />
           ),
           h5: (props: object) => (
-            <h5 className={theme.headings.h5} {...props} />
+            <h5 {...props} className={theme.headings.h5} />
           ),
           h6: (props: object) => (
-            <h6 className={theme.headings.h6} {...props} />
+            <h6 {...props} className={theme.headings.h6} />
           ),
           blockquote: (props: object) => (
-            <blockquote className={theme.quote} {...props} />
+            <blockquote {...props} className={theme.quote} />
           ),
-          ul: (props: object) => <ul className={theme.ul} {...props} />,
-          ol: (props: object) => <ol className={theme.ol} {...props} />,
-          li: (props: object) => <li className={theme.li} {...props} />,
-          hr: (props: object) => <hr className={theme.hr} {...props} />,
+          ul: (props: object) => <ul {...props} className={theme.ul} />,
+          ol: (props: object) => <ol {...props} className={theme.ol} />,
+          li: (props: object) => <li {...props} className={theme.li} />,
+          hr: (props: object) => <hr {...props} className={theme.hr} />,
           strong: (props: object) => (
-            <strong className={theme.strong} {...props} />
+            <strong {...props} className={theme.strong} />
           ),
-          del: (props: object) => <del className="line-through" {...props} />,
+          del: (props: object) => <del {...props} className="line-through" />,
           a: link,
           code: inlineCode,
           pre: preBlock,
           img: image,
           table: (props: object) => (
             <div className={theme.tableWrapper}>
-              <table className={theme.table} {...props} />
+              <table {...props} className={theme.table} />
             </div>
           ),
-          th: (props: object) => <th className={theme.th} {...props} />,
-          td: (props: object) => <td className={theme.td} {...props} />,
+          th: (props: object) => <th {...props} className={theme.th} />,
+          td: (props: object) => <td {...props} className={theme.td} />,
         },
       });
     }, [
