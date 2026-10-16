@@ -6,7 +6,7 @@ import {
   useState,
   useTransition,
 } from 'react';
-import { Check, Clipboard } from 'lucide-react';
+import { Check, Clipboard, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { writeClipboardViaBridge } from '@/vscode/bridge';
 import { useChangesView } from '@/contexts/ChangesViewContext';
@@ -17,11 +17,15 @@ import {
   type MarkdownBlocksState,
 } from './splitBlocks';
 import { MarkdownBlock } from './MarkdownBlock';
+import type { MarkdownVariant } from './markdownTheme';
 
 interface StreamingMarkdownProps {
   content: string;
   workspaceId?: string;
   className?: string;
+  variant?: MarkdownVariant;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }
 
 /**
@@ -37,6 +41,9 @@ export function StreamingMarkdown({
   content,
   workspaceId,
   className,
+  variant = 'new',
+  onEdit,
+  onDelete,
 }: StreamingMarkdownProps) {
   const { viewFileInChanges, findMatchingDiffPath } = useChangesView();
 
@@ -94,20 +101,49 @@ export function StreamingMarkdown({
               <Clipboard className="w-4 h-4 text-muted-foreground" />
             )}
           </Button>
+          {onEdit && (
+            <Button
+              type="button"
+              aria-label="Edit"
+              title="Edit"
+              variant="icon"
+              size="icon"
+              onClick={onEdit}
+              className="pointer-events-auto p-2 bg-muted h-8 w-8"
+            >
+              <Pencil className="w-4 h-4 text-muted-foreground" />
+            </Button>
+          )}
+          {onDelete && (
+            <Button
+              type="button"
+              aria-label="Delete"
+              title="Delete"
+              variant="icon"
+              size="icon"
+              onClick={onDelete}
+              className="pointer-events-auto p-2 bg-muted h-8 w-8"
+            >
+              <Trash2 className="w-4 h-4 text-muted-foreground" />
+            </Button>
+          )}
         </div>
       </div>
-      <div className={cn('whitespace-pre-wrap break-words', className)}>
-        {displayBlocks.map((block, index) => (
-          <MarkdownBlock
-            // Index keys are correct here: blocks only append or mutate the
-            // last one, so identity per position is stable while streaming.
-            key={index}
-            content={block}
-            workspaceId={workspaceId}
-            findMatchingDiffPath={findMatchingDiffPath}
-            onCodeClick={viewFileInChanges}
-          />
-        ))}
+      <div className={cn(variant === 'legacy' && 'wysiwyg text-base')}>
+        <div className={cn('whitespace-pre-wrap break-words', className)}>
+          {displayBlocks.map((block, index) => (
+            <MarkdownBlock
+              // Index keys are correct here: blocks only append or mutate the
+              // last one, so identity per position is stable while streaming.
+              key={index}
+              content={block}
+              workspaceId={workspaceId}
+              variant={variant}
+              findMatchingDiffPath={findMatchingDiffPath}
+              onCodeClick={viewFileInChanges}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );

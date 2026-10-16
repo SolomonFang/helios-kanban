@@ -3,6 +3,7 @@ import Prism from 'prismjs';
 import { Check, Clipboard } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { CODE_HIGHLIGHT_CLASSES } from '@/components/ui/wysiwyg/lib/code-highlight-theme';
+import { markdownThemes, type MarkdownVariant } from './markdownTheme';
 import { writeClipboardViaBridge } from '@/vscode/bridge';
 
 function renderToken(token: string | Prism.Token, key: number): ReactNode {
@@ -37,9 +38,18 @@ function renderToken(token: string | Prism.Token, key: number): ReactNode {
  * Only Prism's built-in grammars (markup, css, clike, javascript) highlight —
  * same coverage as the previous Lexical-based rendering.
  */
-export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
+export function CodeBlock({
+  code,
+  lang,
+  variant = 'new',
+}: {
+  code: string;
+  lang?: string;
+  variant?: MarkdownVariant;
+}) {
   const { t } = useTranslation('common');
   const [copied, setCopied] = useState(false);
+  const theme = markdownThemes[variant].codeBlock;
 
   const highlighted = useMemo((): ReactNode => {
     const grammar = lang ? Prism.languages[lang] : undefined;
@@ -63,15 +73,15 @@ export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
   }, [code]);
 
   return (
-    <div className="my-2 rounded-md border border-border bg-secondary overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-1 border-b border-border">
-        <span className="text-xs text-low select-none">{lang || 'text'}</span>
+    <div className={theme.container}>
+      <div className={theme.header}>
+        <span className={theme.label}>{lang || 'text'}</span>
         <button
           type="button"
           aria-label={copied ? t('actions.copied') : t('actions.copyCode')}
           title={copied ? t('actions.copied') : t('actions.copyCode')}
           onClick={handleCopy}
-          className="p-1 rounded text-low hover:text-normal hover:bg-panel transition-colors"
+          className={theme.copyButton}
         >
           {copied ? (
             <Check className="w-3.5 h-3.5 text-success" />
@@ -80,7 +90,7 @@ export function CodeBlock({ code, lang }: { code: string; lang?: string }) {
           )}
         </button>
       </div>
-      <pre className="block font-mono text-sm px-3 py-2 whitespace-pre overflow-x-auto">
+      <pre className={theme.pre}>
         <code>{highlighted}</code>
       </pre>
     </div>

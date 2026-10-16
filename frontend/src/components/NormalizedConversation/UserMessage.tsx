@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import WYSIWYGEditor from '@/components/ui/wysiwyg';
+import { LegacyMarkdown } from './LegacyMarkdown';
 import { BaseAgentCapability } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { useUserSystem } from '@/components/ConfigProvider';
@@ -64,7 +64,7 @@ const UserMessage = ({
               onCancelled={onCancelled}
             />
           ) : (
-            <WYSIWYGEditor
+            <LegacyMarkdown
               value={content}
               disabled
               className="whitespace-pre-wrap break-words flex flex-col gap-1 font-light"
