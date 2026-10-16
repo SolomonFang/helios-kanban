@@ -308,4 +308,14 @@
   }
 }
 
+/* Code block language header: Lexical's CodeNode puts data-language on its
+   block-level <code> element (inline code spans never have it), so this
+   renders a persistent header row without touching Lexical-owned DOM. */
+@layer components {
+  .legacy-design .wysiwyg code[data-language]::before {
+    content: attr(data-language);
+    @apply block text-xs text-muted-foreground border-b border-border pb-1 mb-2 lowercase;
+  }
+}
+
 @config '../../../tailwind.legacy.config.js';

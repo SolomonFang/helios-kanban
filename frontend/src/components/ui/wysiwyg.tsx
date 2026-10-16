@@ -46,6 +46,7 @@ import { ListNode, ListItemNode } from '@lexical/list';
 import { ListPlugin } from '@lexical/react/LexicalListPlugin';
 import { CodeNode, CodeHighlightNode } from '@lexical/code';
 import { CodeHighlightPlugin } from './wysiwyg/plugins/code-highlight-plugin';
+import { CodeActionMenuPlugin } from './wysiwyg/plugins/code-action-menu-plugin';
 import { CODE_HIGHLIGHT_CLASSES } from './wysiwyg/lib/code-highlight-theme';
 import { LinkNode } from '@lexical/link';
 import { TableNode, TableRowNode, TableCellNode } from '@lexical/table';
@@ -183,41 +184,40 @@ const WYSIWYGEditor = forwardRef<WYSIWYGEditorRef, WysiwygProps>(
         namespace: 'md-wysiwyg',
         onError: console.error,
         theme: {
-          paragraph: 'mb-2 last:mb-0',
+          paragraph: 'mb-2 last:mb-0 leading-relaxed',
           heading: {
-            h1: 'mt-4 mb-2 text-2xl font-semibold',
-            h2: 'mt-3 mb-2 text-xl font-semibold',
-            h3: 'mt-3 mb-2 text-lg font-semibold',
-            h4: 'mt-2 mb-1 text-base font-medium',
-            h5: 'mt-2 mb-1 text-sm font-medium',
-            h6: 'mt-2 mb-1 text-xs font-medium uppercase tracking-wide',
+            h1: 'mt-3 mb-1.5 first:mt-0 text-xl font-semibold',
+            h2: 'mt-3 mb-1.5 first:mt-0 text-lg font-semibold',
+            h3: 'mt-3 mb-1.5 first:mt-0 text-base font-semibold',
+            h4: 'mt-2 mb-1 first:mt-0 text-base font-medium',
+            h5: 'mt-2 mb-1 first:mt-0 text-sm font-medium',
+            h6: 'mt-2 mb-1 first:mt-0 text-xs font-medium uppercase tracking-wide text-muted-foreground',
           },
-          quote:
-            'my-3 border-l-4 border-primary-foreground pl-4 text-muted-foreground',
+          quote: 'my-3 border-l-2 border-border pl-3 text-muted-foreground',
           list: {
-            ul: 'my-1 list-disc list-inside',
-            ol: 'my-1 list-decimal list-inside',
-            listitem: '',
+            ul: 'my-1.5 list-disc list-outside pl-5',
+            ol: 'my-1.5 list-decimal list-outside pl-5',
+            listitem: 'my-0.5 marker:text-muted-foreground',
             nested: {
               // Hide the structural wrapper marker Lexical adds for nested items.
               listitem: 'list-none pl-4',
             },
           },
-          link: 'text-blue-600 dark:text-blue-400 underline underline-offset-2 cursor-pointer hover:text-blue-800 dark:hover:text-blue-300',
+          link: 'text-info underline underline-offset-2 cursor-pointer hover:text-info/80 transition-colors',
           text: {
             bold: 'font-semibold',
             italic: 'italic',
             underline: 'underline underline-offset-2',
             strikethrough: 'line-through',
-            code: 'font-mono bg-muted bg-panel px-1 py-0.5 rounded',
+            code: 'font-mono text-[0.875em] bg-muted border border-border rounded px-1 py-px',
           },
-          code: 'block font-mono bg-secondary rounded-md px-3 py-2 my-2 whitespace-pre overflow-x-auto',
+          code: 'block font-mono text-sm bg-secondary rounded-md border border-border px-3 py-2 my-2 whitespace-pre overflow-x-auto',
           codeHighlight: CODE_HIGHLIGHT_CLASSES,
-          table: 'border-collapse my-2 w-full text-sm',
+          table: 'block w-full overflow-x-auto border-collapse my-2 text-sm',
           tableRow: '',
-          tableCell: 'border border-low px-3 py-2 text-left align-top',
+          tableCell: 'border border-border px-3 py-1.5 text-left align-top',
           tableCellHeader:
-            'bg-muted font-semibold border border-low px-3 py-2 text-left align-top',
+            'bg-muted font-semibold border border-border px-3 py-1.5 text-left align-top',
         },
         nodes: [
           HeadingNode,
@@ -353,6 +353,8 @@ const WYSIWYGEditor = forwardRef<WYSIWYGEditorRef, WysiwygProps>(
                 )}
                 {/* Link sanitization for read-only mode */}
                 {disabled && <ReadOnlyLinkPlugin />}
+                {/* Hover copy button on code blocks in read-only mode */}
+                {disabled && <CodeActionMenuPlugin />}
                 {/* Clickable code for file paths in read-only mode */}
                 {disabled && findMatchingDiffPath && onCodeClick && (
                   <ClickableCodePlugin
