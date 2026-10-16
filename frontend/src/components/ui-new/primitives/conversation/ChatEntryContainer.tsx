@@ -16,6 +16,7 @@ interface VariantConfig {
   border: string;
   headerBg: string;
   bg: string;
+  actionsBg: string;
 }
 
 const variantConfig: Record<Variant, VariantConfig> = {
@@ -24,24 +25,28 @@ const variantConfig: Record<Variant, VariantConfig> = {
     border: 'border-border',
     headerBg: '',
     bg: '',
+    actionsBg: 'bg-secondary',
   },
   plan: {
     icon: ListChecksIcon,
     border: 'border-brand',
     headerBg: 'bg-brand/20',
     bg: 'bg-brand/10',
+    actionsBg: 'bg-brand/20',
   },
   plan_denied: {
     icon: ListChecksIcon,
     border: 'border-error',
     headerBg: 'bg-error/20',
     bg: 'bg-error/10',
+    actionsBg: 'bg-error/20',
   },
   system: {
     icon: GearIcon,
     border: 'border-border',
-    headerBg: 'bg-gray-50 dark:bg-gray-900/30',
+    headerBg: 'bg-secondary',
     bg: '',
+    actionsBg: 'bg-secondary',
   },
 };
 
@@ -117,7 +122,12 @@ export function ChatEntryContainer({
 
       {/* Actions footer - optional */}
       {actions && (
-        <div className="bg-brand/20 backdrop-blur-sm flex items-center gap-base px-double py-base border-t sticky bottom-0 rounded-md">
+        <div
+          className={cn(
+            'backdrop-blur-sm flex items-center gap-base px-double py-base border-t sticky bottom-0 rounded-md',
+            config.actionsBg
+          )}
+        >
           {actions}
         </div>
       )}
