@@ -3,6 +3,7 @@ use std::{future::Future, str::FromStr};
 use db::models::{
     project::Project,
     repo::Repo,
+    session::Session,
     tag::Tag,
     task::{
         CreateTask, Task, TaskPriority, TaskStatus, TaskType, TaskWithAttemptStatus, UpdateTask,
@@ -392,6 +393,27 @@ pub struct StartWorkspaceSessionResponse {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListWorkspaceSessionsRequest {
+    #[schemars(description = "The ID of the workspace whose sessions to list")]
+    pub workspace_id: Uuid,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct WorkspaceSessionSummary {
+    pub session_id: String,
+    pub executor: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ListWorkspaceSessionsResponse {
+    pub workspace_id: String,
+    pub sessions: Vec<WorkspaceSessionSummary>,
+    pub count: usize,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct StopWorkspaceSessionRequest {
     #[schemars(description = "The workspace ID to stop")]
     pub workspace_id: Uuid,
@@ -433,7 +455,7 @@ pub struct GetTaskResponse {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct FollowUpSessionRequest {
     #[schemars(
-        description = "The ID of the session to send the follow-up to. Use get_task_status to find a workspace's latest_session_id."
+        description = "The ID of the session to send the follow-up to. Use list_workspace_sessions to find any session_id, including historical sessions."
     )]
     pub session_id: Uuid,
     #[schemars(description = "The follow-up instruction/prompt for the agent")]
@@ -456,7 +478,7 @@ pub struct FollowUpSessionResponse {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct QueueMessageRequest {
     #[schemars(
-        description = "The ID of the session to queue the message for. Use get_task_status to find a workspace's latest_session_id."
+        description = "The ID of the session to queue the message for. Use list_workspace_sessions to find any session_id, including historical sessions."
     )]
     pub session_id: Uuid,
     #[schemars(
@@ -1640,6 +1662,37 @@ impl TaskServer {
     }
 
     #[tool(
+        description = "List all sessions in a workspace, most recently used first. Use the returned session_id with follow_up_session to resume an inactive historical session, or queue_message if that session is still running."
+    )]
+    async fn list_workspace_sessions(
+        &self,
+        Parameters(ListWorkspaceSessionsRequest { workspace_id }): Parameters<
+            ListWorkspaceSessionsRequest,
+        >,
+    ) -> Result<CallToolResult, ErrorData> {
+        let url = self.url(&format!("/api/sessions?workspace_id={workspace_id}"));
+        let sessions: Vec<Session> = match self.send_json(self.client.get(&url)).await {
+            Ok(sessions) => sessions,
+            Err(e) => return Ok(e),
+        };
+        let sessions: Vec<WorkspaceSessionSummary> = sessions
+            .into_iter()
+            .map(|session| WorkspaceSessionSummary {
+                session_id: session.id.to_string(),
+                executor: session.executor,
+                created_at: session.created_at.to_rfc3339(),
+                updated_at: session.updated_at.to_rfc3339(),
+            })
+            .collect();
+
+        TaskServer::success(&ListWorkspaceSessionsResponse {
+            workspace_id: workspace_id.to_string(),
+            count: sessions.len(),
+            sessions,
+        })
+    }
+
+    #[tool(
         description = "Stop a running workspace/agent session. Does not cancel or delete the task."
     )]
     async fn stop_workspace_session(
@@ -1824,7 +1877,7 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Send a follow-up instruction to a task's agent session (starts a new execution in the same workspace). Use get_task_status to find a workspace's latest_session_id. Omit `executor` to reuse the session's executor."
+        description = "Send a follow-up instruction to a task's agent session (starts a new execution in the same workspace). Use list_workspace_sessions to find any session_id, including historical sessions. Omit `executor` to reuse the session's executor."
     )]
     async fn follow_up_session(
         &self,
@@ -1869,7 +1922,7 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Queue a message to be delivered to a session when its current execution finishes (one queued message per session; a new one replaces the old). Prefer this over follow_up_session when the agent is still running. Use get_task_status to find a workspace's latest_session_id."
+        description = "Queue a message to be delivered to a session when its current execution finishes (one queued message per session; a new one replaces the old). Prefer this over follow_up_session when the agent is still running. Use list_workspace_sessions to find any session_id, including historical sessions."
     )]
     async fn queue_message(
         &self,
@@ -2346,7 +2399,7 @@ impl TaskServer {
 #[tool_handler]
 impl ServerHandler for TaskServer {
     fn get_info(&self) -> ServerInfo {
-        let mut instruction = "A task and project management server. Always call `list_projects` first and read each project's `description` (and `repos`) to choose the correct `project_id` before creating tasks. TOOLS: 'list_projects', 'get_project', 'create_project', 'update_project', 'list_tasks', 'create_task', 'create_task_and_start', 'get_task', 'get_task_status', 'update_task', 'cancel_task', 'delete_task', 'start_workspace_session', 'stop_workspace_session', 'follow_up_session', 'queue_message', 'list_approvals', 'respond_to_approval', 'list_repos', 'get_repo', 'list_branches', 'list_tags', 'update_setup_script', 'update_cleanup_script', 'update_dev_server_script'. Omit executor on start_workspace_session to use Settings default; omit base_branch to use repo default_target_branch. Prefer cancel_task over delete_task. Prefer create_task_and_start over separate create_task + start_workspace_session calls.".to_string();
+        let mut instruction = "A task and project management server. Always call `list_projects` first and read each project's `description` (and `repos`) to choose the correct `project_id` before creating tasks. TOOLS: 'list_projects', 'get_project', 'create_project', 'update_project', 'list_tasks', 'create_task', 'create_task_and_start', 'get_task', 'get_task_status', 'update_task', 'cancel_task', 'delete_task', 'start_workspace_session', 'list_workspace_sessions', 'stop_workspace_session', 'follow_up_session', 'queue_message', 'list_approvals', 'respond_to_approval', 'list_repos', 'get_repo', 'list_branches', 'list_tags', 'update_setup_script', 'update_cleanup_script', 'update_dev_server_script'. Omit executor on start_workspace_session to use Settings default; omit base_branch to use repo default_target_branch. Prefer cancel_task over delete_task. Prefer create_task_and_start over separate create_task + start_workspace_session calls.".to_string();
         if self.context.is_some() {
             let context_instruction = "Use 'get_context' to fetch project/task/workspace metadata for the active Vibe Kanban workspace session when available.";
             instruction = format!("{} {}", context_instruction, instruction);

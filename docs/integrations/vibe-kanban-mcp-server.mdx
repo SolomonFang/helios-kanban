@@ -6,11 +6,16 @@ description: "Configure the Vibe Kanban MCP server"
 Vibe Kanban exposes a local MCP (Model Context Protocol) server, allowing you to manage projects and tasks from external MCP clients like Claude Desktop, Raycast, or even coding agents running within Vibe Kanban itself.
 
 <Note>
-This page covers connecting **external MCP clients** to Vibe Kanban's MCP server. For configuring MCP servers **within** Vibe Kanban for your coding agents, see the [MCP Server Configuration](/integrations/mcp-server-configuration) guide.
+  This page covers connecting **external MCP clients** to Vibe Kanban's MCP
+  server. For configuring MCP servers **within** Vibe Kanban for your coding
+  agents, see the [MCP Server
+  Configuration](/integrations/mcp-server-configuration) guide.
 </Note>
 
 <Info>
-Vibe Kanban's MCP server is **local-only** - it runs on your computer and can only be accessed by applications installed locally. It cannot be accessed via publicly accessible URLs.
+  Vibe Kanban's MCP server is **local-only** - it runs on your computer and can
+  only be accessed by applications installed locally. It cannot be accessed via
+  publicly accessible URLs.
 </Info>
 
 <video
@@ -30,7 +35,10 @@ This works if you're adding the Vibe Kanban MCP server to any [supported coding 
 3. Click the `Save Settings` button
 
 <Frame>
-<img src="/images/vk-mcp-server-config.jpeg" alt="MCP Servers configuration page showing how to add Vibe Kanban MCP server" />
+  <img
+    src="/images/vk-mcp-server-config.jpeg"
+    alt="MCP Servers configuration page showing how to add Vibe Kanban MCP server"
+  />
 </Frame>
 
 ### Option 2: Manual Configuration
@@ -56,60 +64,73 @@ The Vibe Kanban MCP server provides the following tools for managing projects, t
 
 ### Project Operations
 
-| Tool | Purpose | Required Parameters | Optional Parameters | Returns |
-|------|---------|-------------------|-------------------|---------|
-| `list_projects` | Fetch all projects | None | None | List of projects with metadata |
-| `create_project` | Create a new project | `name`<br/>`repositories` (array, may be empty) | `description` | Created project with metadata |
-| `list_repos` | List repositories in a project | `project_id` | None | List of repositories with IDs |
+| Tool             | Purpose                        | Required Parameters                             | Optional Parameters | Returns                        |
+| ---------------- | ------------------------------ | ----------------------------------------------- | ------------------- | ------------------------------ |
+| `list_projects`  | Fetch all projects             | None                                            | None                | List of projects with metadata |
+| `create_project` | Create a new project           | `name`<br/>`repositories` (array, may be empty) | `description`       | Created project with metadata  |
+| `list_repos`     | List repositories in a project | `project_id`                                    | None                | List of repositories with IDs  |
 
 ### Context
 
-| Tool | Purpose | Required Parameters | Optional Parameters | Returns |
-|------|---------|-------------------|-------------------|---------|
-| `get_context` | Get current workspace context (only available within an active workspace session) | None | None | Project, task, and workspace metadata |
+| Tool          | Purpose                                                                           | Required Parameters | Optional Parameters | Returns                               |
+| ------------- | --------------------------------------------------------------------------------- | ------------------- | ------------------- | ------------------------------------- |
+| `get_context` | Get current workspace context (only available within an active workspace session) | None                | None                | Project, task, and workspace metadata |
 
 ### Task Management
 
-| Tool | Purpose | Required Parameters | Optional Parameters | Returns |
-|------|---------|-------------------|-------------------|---------|
-| `list_tasks` | List tasks in a project | `project_id` | `status`<br/>`limit` | List of tasks with execution state |
-| `create_task` | Create a new task | `project_id`<br/>`title` | `description` | Created task ID and confirmation |
-| `create_task_and_start` | Create a task and immediately start a workspace session on it | `project_id`<br/>`title`<br/>`repos` | `description`<br/>`iteration`<br/>`executor`<br/>`variant` | Task ID and workspace ID |
-| `get_task` | Get task details | `task_id` | None | Full task information |
-| `get_task_status` | Aggregated task status: workspaces, latest execution, session IDs, pending approvals, PR status, diff stats | `task_id` | None | Task details with per-workspace status |
-| `update_task` | Update task details | `task_id` | `title`<br/>`description`<br/>`status` | Updated task information |
-| `delete_task` | Delete a task | `task_id` | None | Deletion confirmation |
-| `list_tags` | List all tags (reference as `@tag_name` in task descriptions) | None | None | List of tags with content |
+| Tool                    | Purpose                                                                                                     | Required Parameters                  | Optional Parameters                                        | Returns                                |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------- | -------------------------------------- |
+| `list_tasks`            | List tasks in a project                                                                                     | `project_id`                         | `status`<br/>`limit`                                       | List of tasks with execution state     |
+| `create_task`           | Create a new task                                                                                           | `project_id`<br/>`title`             | `description`                                              | Created task ID and confirmation       |
+| `create_task_and_start` | Create a task and immediately start a workspace session on it                                               | `project_id`<br/>`title`<br/>`repos` | `description`<br/>`iteration`<br/>`executor`<br/>`variant` | Task ID and workspace ID               |
+| `get_task`              | Get task details                                                                                            | `task_id`                            | None                                                       | Full task information                  |
+| `get_task_status`       | Aggregated task status: workspaces, latest execution, session IDs, pending approvals, PR status, diff stats | `task_id`                            | None                                                       | Task details with per-workspace status |
+| `update_task`           | Update task details                                                                                         | `task_id`                            | `title`<br/>`description`<br/>`status`                     | Updated task information               |
+| `delete_task`           | Delete a task                                                                                               | `task_id`                            | None                                                       | Deletion confirmation                  |
+| `list_tags`             | List all tags (reference as `@tag_name` in task descriptions)                                               | None                                 | None                                                       | List of tags with content              |
 
 ### Repository Management
 
-| Tool | Purpose | Required Parameters | Optional Parameters | Returns |
-|------|---------|-------------------|-------------------|---------|
-| `list_repos` | List repositories in a project | `project_id` | None | List of repositories with IDs and names |
-| `get_repo` | Get repository details including scripts | `repo_id` | None | Repository info with setup, cleanup, and dev server scripts |
-| `list_branches` | List git branches (local and remote) of a repository | `repo_id` | None | Branch list with current/remote flags |
-| `update_setup_script` | Update a repository's setup script | `repo_id` | `script` | Update confirmation |
-| `update_cleanup_script` | Update a repository's cleanup script | `repo_id` | `script` | Update confirmation |
-| `update_dev_server_script` | Update a repository's dev server script | `repo_id` | `script` | Update confirmation |
+| Tool                       | Purpose                                              | Required Parameters | Optional Parameters | Returns                                                     |
+| -------------------------- | ---------------------------------------------------- | ------------------- | ------------------- | ----------------------------------------------------------- |
+| `list_repos`               | List repositories in a project                       | `project_id`        | None                | List of repositories with IDs and names                     |
+| `get_repo`                 | Get repository details including scripts             | `repo_id`           | None                | Repository info with setup, cleanup, and dev server scripts |
+| `list_branches`            | List git branches (local and remote) of a repository | `repo_id`           | None                | Branch list with current/remote flags                       |
+| `update_setup_script`      | Update a repository's setup script                   | `repo_id`           | `script`            | Update confirmation                                         |
+| `update_cleanup_script`    | Update a repository's cleanup script                 | `repo_id`           | `script`            | Update confirmation                                         |
+| `update_dev_server_script` | Update a repository's dev server script              | `repo_id`           | `script`            | Update confirmation                                         |
 
 ### Task Execution
 
-| Tool | Purpose | Required Parameters | Optional Parameters | Returns |
-|------|---------|-------------------|-------------------|---------|
-| `start_workspace_session` | Start working on a task with a coding agent | `task_id`<br/>`executor`<br/>`repos` | `variant` | Task ID and workspace ID |
-| `follow_up_session` | Send a follow-up instruction to a session (starts a new execution in the same workspace) | `session_id`<br/>`prompt` | `executor`<br/>`variant` | New execution process info |
-| `queue_message` | Queue a message to be delivered when the session's current execution finishes | `session_id`<br/>`message` | `executor`<br/>`variant` | Queue confirmation |
+| Tool                      | Purpose                                                                                                             | Required Parameters                  | Optional Parameters      | Returns                                |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ------------------------ | -------------------------------------- |
+| `start_workspace_session` | Start working on a task with a coding agent                                                                         | `task_id`<br/>`executor`<br/>`repos` | `variant`                | Task ID and workspace ID               |
+| `list_workspace_sessions` | List every session in a workspace, most recently used first                                                         | `workspace_id`                       | None                     | Session IDs, executors, and timestamps |
+| `follow_up_session`       | Send a follow-up instruction to an inactive session (starts a new execution in the same workspace and conversation) | `session_id`<br/>`prompt`            | `executor`<br/>`variant` | New execution process info             |
+| `queue_message`           | Queue a message to be delivered when the session's current execution finishes                                       | `session_id`<br/>`message`           | `executor`<br/>`variant` | Queue confirmation                     |
 
-Use `get_task_status` to find a workspace's `latest_session_id` for `follow_up_session` / `queue_message`.
+Use `get_task_status` to find a workspace's `latest_session_id`, or `list_workspace_sessions` to choose any historical session. Pass that session's ID to `follow_up_session` with your prompt to continue its existing conversation. If the session is still running, use `queue_message` instead.
+
+Omit `executor` and `variant` when resuming a historical session so it keeps its current executor. The server rejects attempts to switch an existing session to a different executor.
+
+For example, after selecting a session from `list_workspace_sessions`, call `follow_up_session` with:
+
+```json
+{
+  "session_id": "123e4567-e89b-12d3-a456-426614174000",
+  "prompt": "Continue the previous task and summarise the remaining work."
+}
+```
 
 ### Approvals
 
-| Tool | Purpose | Required Parameters | Optional Parameters | Returns |
-|------|---------|-------------------|-------------------|---------|
-| `list_approvals` | List pending tool-approval requests from running agents | None | None | List of pending approvals |
-| `respond_to_approval` | Approve or deny a pending approval (`decision`: `approved` or `denied`) | `approval_id`<br/>`decision` | `reason` | Outcome of the response |
+| Tool                  | Purpose                                                                 | Required Parameters          | Optional Parameters | Returns                   |
+| --------------------- | ----------------------------------------------------------------------- | ---------------------------- | ------------------- | ------------------------- |
+| `list_approvals`      | List pending tool-approval requests from running agents                 | None                         | None                | List of pending approvals |
+| `respond_to_approval` | Approve or deny a pending approval (`decision`: `approved` or `denied`) | `approval_id`<br/>`decision` | `reason`            | Outcome of the response   |
 
 The `repos` parameter is an array of objects with:
+
 - `repo_id`: The repository ID (UUID)
 - `base_branch`: The base branch for this repository
 
@@ -163,6 +184,7 @@ Start working on the user registration task using Claude Code on the main branch
 ```
 
 Your MCP client will use the `start_workspace_session` tool with parameters like:
+
 ```json
 {
   "task_id": "123e4567-e89b-12d3-a456-426614174000",
@@ -215,6 +237,7 @@ For complete Raycast MCP configuration details, see the [official Raycast MCP do
 </Frame>
 
 Configure the Vibe Kanban MCP server in Raycast by adding the server details.
+
 </Tab>
 
 <Tab title="Step 2: Supply Command">
@@ -223,9 +246,11 @@ Configure the Vibe Kanban MCP server in Raycast by adding the server details.
 </Frame>
 
 Once configured, you'll see the Vibe Kanban MCP server listed and ready to use in Raycast.
+
 </Tab>
 </Tabs>
 
 <Note>
-Similar configuration steps apply to other MCP clients like Claude Desktop, VS Code with MCP extensions, or any custom MCP client implementations.
+  Similar configuration steps apply to other MCP clients like Claude Desktop, VS
+  Code with MCP extensions, or any custom MCP client implementations.
 </Note>
