@@ -2,13 +2,13 @@ import { useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { RJSFSchema } from '@rjsf/utils';
 import { BaseCodingAgent } from 'shared/types';
-import type { OpencodeConfigOption } from 'shared/types';
+import type { AcpConfigOption } from 'shared/types';
 import { opencodeApi } from '@/lib/api';
 
 type ExecutorFormData = Record<string, unknown>;
 
 function enumSchema(
-  options: OpencodeConfigOption[],
+  options: AcpConfigOption[],
   currentValue: unknown
 ): Pick<RJSFSchema, 'enum' | 'enumNames'> | undefined {
   if (options.length === 0) return undefined;

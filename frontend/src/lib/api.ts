@@ -96,7 +96,7 @@ import {
   CreateFromPrError,
   MigrationRequest,
   MigrationResponse,
-  OpencodeConfigOptions,
+  AcpConfigOptions,
 } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { createWorkspaceWithSession } from '@/types/attempt';
@@ -1053,9 +1053,16 @@ export const mcpServersApi = {
 };
 
 export const opencodeApi = {
-  configOptions: async (): Promise<OpencodeConfigOptions> => {
+  configOptions: async (): Promise<AcpConfigOptions> => {
     const response = await makeRequest('/api/agents/opencode/config-options');
-    return handleApiResponse<OpencodeConfigOptions>(response);
+    return handleApiResponse<AcpConfigOptions>(response);
+  },
+};
+
+export const kimiApi = {
+  configOptions: async (): Promise<AcpConfigOptions> => {
+    const response = await makeRequest('/api/agents/kimi/config-options');
+    return handleApiResponse<AcpConfigOptions>(response);
   },
 };
 

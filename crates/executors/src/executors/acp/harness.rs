@@ -31,6 +31,7 @@ pub struct AcpAgentHarness {
     session_namespace: String,
     model: Option<String>,
     model_via_config_option: bool,
+    additional_config_options: Vec<(String, String)>,
     mode: Option<String>,
     native_session_resume: bool,
     tool_auto_approve: bool,
@@ -50,6 +51,7 @@ impl AcpAgentHarness {
             session_namespace: "gemini_sessions".to_string(),
             model: None,
             model_via_config_option: false,
+            additional_config_options: Vec::new(),
             mode: None,
             native_session_resume: false,
             tool_auto_approve: false,
@@ -62,6 +64,7 @@ impl AcpAgentHarness {
             session_namespace: namespace.into(),
             model: None,
             model_via_config_option: false,
+            additional_config_options: Vec::new(),
             mode: None,
             native_session_resume: false,
             tool_auto_approve: false,
@@ -75,6 +78,12 @@ impl AcpAgentHarness {
 
     pub fn with_model_via_config_option(mut self, enabled: bool) -> Self {
         self.model_via_config_option = enabled;
+        self
+    }
+
+    pub fn with_config_option(mut self, id: impl Into<String>, value: impl Into<String>) -> Self {
+        self.additional_config_options
+            .push((id.into(), value.into()));
         self
     }
 
@@ -326,6 +335,7 @@ impl AcpAgentHarness {
             self.session_namespace.clone(),
             self.model.clone(),
             self.model_via_config_option,
+            self.additional_config_options.clone(),
             self.mode.clone(),
             self.native_session_resume,
             self.tool_auto_approve,
@@ -384,6 +394,7 @@ impl AcpAgentHarness {
             self.session_namespace.clone(),
             self.model.clone(),
             self.model_via_config_option,
+            self.additional_config_options.clone(),
             self.mode.clone(),
             self.native_session_resume,
             self.tool_auto_approve,
@@ -410,6 +421,7 @@ impl AcpAgentHarness {
         session_namespace: String,
         model: Option<String>,
         model_via_config_option: bool,
+        additional_config_options: Vec<(String, String)>,
         mode: Option<String>,
         native_session_resume: bool,
         tool_auto_approve: bool,
@@ -512,6 +524,7 @@ impl AcpAgentHarness {
             session_namespace,
             model,
             model_via_config_option,
+            additional_config_options,
             mode,
             native_session_resume,
             tool_auto_approve,
@@ -542,6 +555,7 @@ impl AcpAgentHarness {
         session_namespace: String,
         model: Option<String>,
         model_via_config_option: bool,
+        additional_config_options: Vec<(String, String)>,
         mode: Option<String>,
         native_session_resume: bool,
         tool_auto_approve: bool,
@@ -762,6 +776,23 @@ impl AcpAgentHarness {
                                 // Not safety-critical: surface the failure
                                 // but keep running on the default model.
                                 error!("Failed to set session model: {e}");
+                                let _ = log_tx
+                                    .send(AcpEvent::Error(format!("{e}")).to_string());
+                            }
+                        }
+
+                        for (id, value) in additional_config_options {
+                            if let Err(e) = conn
+                                .set_session_config_option(
+                                    proto::SetSessionConfigOptionRequest::new(
+                                        proto::SessionId::new(acp_session_id.clone()),
+                                        id.clone(),
+                                        value,
+                                    ),
+                                )
+                                .await
+                            {
+                                error!("Failed to set ACP config option {id}: {e}");
                                 let _ = log_tx
                                     .send(AcpEvent::Error(format!("{e}")).to_string());
                             }
@@ -1067,6 +1098,7 @@ mod tests {
             session_namespace.clone(),
             None,
             false,
+            Vec::new(),
             mode,
             false,
             false,

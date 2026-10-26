@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, SlidersHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { Opencode, OpencodeConfigOption } from 'shared/types';
+import type { Opencode, AcpConfigOption } from 'shared/types';
 import { opencodeApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,7 +22,7 @@ type Props = {
   disabled?: boolean;
 };
 
-function withCurrentValue<T extends OpencodeConfigOption>(
+function withCurrentValue<T extends AcpConfigOption>(
   options: T[],
   currentValue: string | null | undefined
 ): T[] {

@@ -523,11 +523,11 @@ name: string, description?: string | null, };
 
 export type AvailabilityInfo = { "type": "LOGIN_DETECTED", last_auth_timestamp: bigint, } | { "type": "INSTALLATION_FOUND" } | { "type": "NOT_FOUND" };
 
-export type OpencodeConfigOption = { value: string, label: string, };
+export type AcpConfigOption = { value: string, label: string, };
 
-export type OpencodeModelOption = { value: string, label: string, variants: Array<OpencodeConfigOption>, };
+export type AcpModelOption = { value: string, label: string, variants: Array<AcpConfigOption>, };
 
-export type OpencodeConfigOptions = { models: Array<OpencodeModelOption>, agents: Array<OpencodeConfigOption>, };
+export type AcpConfigOptions = { models: Array<AcpModelOption>, agents: Array<AcpConfigOption>, };
 
 export type CommandBuilder = { 
 /**
@@ -591,9 +591,11 @@ auto_compact: boolean, base_command_override?: string | null, additional_params?
 
 export type QwenCode = { append_prompt: AppendPrompt, model?: string | null, agent?: string | null, yolo?: boolean | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
 
-export type KimiCli = { append_prompt: AppendPrompt, mode?: KimiMode | null, model?: string | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
+export type KimiCli = { append_prompt: AppendPrompt, mode?: KimiMode | null, model?: string | null, thinking?: KimiThinking | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
 
 export type KimiMode = "default" | "plan" | "auto" | "yolo";
+
+export type KimiThinking = "low" | "high" | "max";
 
 export type Droid = { append_prompt: AppendPrompt, autonomy: Autonomy, model?: string | null, reasoning_effort?: DroidReasoningEffort | null, base_command_override?: string | null, additional_params?: Array<string> | null, env?: { [key in string]?: string } | null, };
 

@@ -8,10 +8,6 @@ use serde_json::{Map, Value};
 use ts_rs::TS;
 use workspace_utils::msg_store::MsgStore;
 
-mod config_options;
-
-pub use config_options::{OpencodeConfigOption, OpencodeConfigOptions, OpencodeModelOption};
-
 use crate::{
     approvals::ExecutorApprovalService,
     command::{CmdOverrides, CommandBuildError, CommandBuilder, apply_overrides},
@@ -52,6 +48,22 @@ impl Opencode {
     fn build_command_builder(&self) -> Result<CommandBuilder, CommandBuildError> {
         let builder = CommandBuilder::new("npx -y @opencode/cli@2.1.4").extend_params(["acp"]);
         apply_overrides(builder, &self.cmd)
+    }
+
+    pub async fn discover_config_options(
+        &self,
+        current_dir: &Path,
+        env: &ExecutionEnv,
+    ) -> Result<super::acp::config_options::AcpConfigOptions, ExecutorError> {
+        let command_parts = self.build_command_builder()?.build_initial()?;
+        let env = self.setup_config_env(env);
+        super::acp::config_options::discover_config_options(
+            command_parts,
+            current_dir,
+            &env,
+            &self.cmd,
+        )
+        .await
     }
 
     fn acp_model(&self) -> Option<String> {

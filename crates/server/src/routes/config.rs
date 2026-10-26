@@ -17,7 +17,7 @@ use executors::{
     env::{ExecutionEnv, RepoContext},
     executors::{
         AvailabilityInfo, BaseAgentCapability, BaseCodingAgent, CodingAgent,
-        StandardCodingAgentExecutor, opencode::OpencodeConfigOptions,
+        StandardCodingAgentExecutor, acp::config_options::AcpConfigOptions,
     },
     mcp_config::{McpConfig, read_agent_config, write_agent_config},
     profile::{ExecutorConfigs, ExecutorProfileId},
@@ -55,6 +55,7 @@ pub fn router() -> Router<DeploymentImpl> {
             "/agents/opencode/config-options",
             get(get_opencode_config_options),
         )
+        .route("/agents/kimi/config-options", get(get_kimi_config_options))
         .route(
             "/agents/slash-commands/ws",
             get(stream_agent_slash_commands_ws),
@@ -511,7 +512,7 @@ async fn check_agent_availability(
 
 async fn get_opencode_config_options(
     State(_deployment): State<DeploymentImpl>,
-) -> Result<ResponseJson<ApiResponse<OpencodeConfigOptions>>, ApiError> {
+) -> Result<ResponseJson<ApiResponse<AcpConfigOptions>>, ApiError> {
     let profiles = ExecutorConfigs::get_cached();
     let profile_id = ExecutorProfileId::new(BaseCodingAgent::Opencode);
     let Some(CodingAgent::Opencode(opencode)) = profiles.get_coding_agent(&profile_id) else {
@@ -522,6 +523,23 @@ async fn get_opencode_config_options(
     let current_dir = std::env::current_dir()?;
     let env = ExecutionEnv::new(RepoContext::default(), false, String::new());
     let options = opencode.discover_config_options(&current_dir, &env).await?;
+
+    Ok(ResponseJson(ApiResponse::success(options)))
+}
+
+async fn get_kimi_config_options(
+    State(_deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<AcpConfigOptions>>, ApiError> {
+    let profiles = ExecutorConfigs::get_cached();
+    let profile_id = ExecutorProfileId::new(BaseCodingAgent::KimiCli);
+    let Some(CodingAgent::KimiCli(kimi)) = profiles.get_coding_agent(&profile_id) else {
+        return Err(ApiError::BadRequest(
+            "Kimi default profile not found".to_string(),
+        ));
+    };
+    let current_dir = std::env::current_dir()?;
+    let env = ExecutionEnv::new(RepoContext::default(), false, String::new());
+    let options = kimi.discover_config_options(&current_dir, &env).await?;
 
     Ok(ResponseJson(ApiResponse::success(options)))
 }

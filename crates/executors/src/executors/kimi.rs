@@ -40,6 +40,24 @@ impl KimiMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, TS, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum KimiThinking {
+    Low,
+    High,
+    Max,
+}
+
+impl KimiThinking {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::High => "high",
+            Self::Max => "max",
+        }
+    }
+}
+
 #[derive(Derivative, Clone, Serialize, Deserialize, TS, JsonSchema)]
 #[derivative(Debug, PartialEq)]
 pub struct KimiCli {
@@ -49,6 +67,8 @@ pub struct KimiCli {
     pub mode: Option<KimiMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<KimiThinking>,
     #[serde(flatten)]
     pub cmd: CmdOverrides,
     #[serde(skip)]
@@ -64,16 +84,35 @@ impl KimiCli {
         apply_overrides(builder, &self.cmd)
     }
 
+    pub async fn discover_config_options(
+        &self,
+        current_dir: &Path,
+        env: &ExecutionEnv,
+    ) -> Result<super::acp::config_options::AcpConfigOptions, ExecutorError> {
+        let command_parts = self.build_command_builder()?.build_initial()?;
+        super::acp::config_options::discover_config_options(
+            command_parts,
+            current_dir,
+            env,
+            &self.cmd,
+        )
+        .await
+    }
+
     fn acp_harness(&self) -> AcpAgentHarness {
         // Kimi advertises `loadSession`, so follow-ups resume the original
         // agent session natively instead of forking into a new one.
         let mut harness = AcpAgentHarness::with_session_namespace("kimi_sessions")
-            .with_native_session_resume(true);
+            .with_native_session_resume(true)
+            .with_model_via_config_option(true);
         if let Some(mode) = self.mode {
             harness = harness.with_mode(mode.as_acp_mode_id());
         }
         if let Some(model) = &self.model {
             harness = harness.with_model(model.clone());
+        }
+        if let Some(thinking) = self.thinking {
+            harness = harness.with_config_option("thinking", thinking.as_str());
         }
         // Yolo auto-approves tool permissions client-side, but questions must
         // still reach the user (kimi's own yolo mode keeps questions too).
@@ -264,6 +303,7 @@ mod tests {
             append_prompt: Default::default(),
             mode: Some(KimiMode::Plan),
             model: None,
+            thinking: None,
             cmd: Default::default(),
             approvals: None,
         };
@@ -356,11 +396,21 @@ mod tests {
         ids
     }
 
+    #[test]
+    fn thinking_defaults_to_none_and_deserializes() {
+        let legacy: KimiCli = serde_json::from_str("{}").unwrap();
+        assert_eq!(legacy.thinking, None);
+
+        let configured: KimiCli = serde_json::from_str(r#"{"thinking":"max"}"#).unwrap();
+        assert_eq!(configured.thinking, Some(KimiThinking::Max));
+    }
+
     fn make_kimi(mode: Option<KimiMode>, approvals: Arc<dyn ExecutorApprovalService>) -> KimiCli {
         let mut kimi = KimiCli {
             append_prompt: Default::default(),
             mode,
             model: None,
+            thinking: None,
             cmd: Default::default(),
             approvals: None,
         };

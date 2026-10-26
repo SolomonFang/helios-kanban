@@ -29,7 +29,6 @@ import {
   BaseCodingAgent,
   ScratchType,
   type CodingAgent,
-  type Opencode,
   type TaskWithAttemptStatus,
 } from 'shared/types';
 import { useBranchStatus } from '@/hooks';
@@ -48,6 +47,9 @@ import { useProject } from '@/contexts/ProjectContext';
 //
 import { VariantSelector } from '@/components/tasks/VariantSelector';
 import { OpencodeFollowUpOptions } from '@/components/tasks/OpencodeFollowUpOptions';
+import { KimiFollowUpOptions } from '@/components/tasks/KimiFollowUpOptions';
+import { CodexFollowUpOptions } from '@/components/tasks/CodexFollowUpOptions';
+import { ClaudeFollowUpOptions } from '@/components/tasks/ClaudeFollowUpOptions';
 import { LegacyContextUsage } from '@/components/tasks/LegacyContextUsage';
 import { useAttemptBranch } from '@/hooks/useAttemptBranch';
 import { FollowUpConflictSection } from '@/components/tasks/follow-up/FollowUpConflictSection';
@@ -177,27 +179,27 @@ export function TaskFollowUpSection({
       scratchVariant: scratchData?.executor_profile_id?.variant,
     });
 
-  const profileOpencode = useMemo(() => {
-    const config = currentProfile?.[selectedVariant ?? 'DEFAULT'];
-    return config && 'OPENCODE' in config ? config.OPENCODE : null;
-  }, [currentProfile, selectedVariant]);
-  const scratchOpencode =
-    scratchData?.executor_config && 'OPENCODE' in scratchData.executor_config
-      ? scratchData.executor_config.OPENCODE
-      : null;
-  const [opencodeConfig, setOpencodeConfig] = useState<Opencode | null>(
-    scratchOpencode ?? profileOpencode
-  );
+  const supportsExecutorOptions = [
+    BaseCodingAgent.OPENCODE,
+    BaseCodingAgent.KIMI_CLI,
+    BaseCodingAgent.CODEX,
+    BaseCodingAgent.CLAUDE_CODE,
+  ].includes(latestProfileId?.executor ?? BaseCodingAgent.AMP);
+  const profileExecutorConfig = useMemo(() => {
+    if (!supportsExecutorOptions) return null;
+    return currentProfile?.[selectedVariant ?? 'DEFAULT'] ?? null;
+  }, [currentProfile, selectedVariant, supportsExecutorOptions]);
+  const scratchExecutorConfig = supportsExecutorOptions
+    ? (scratchData?.executor_config ?? null)
+    : null;
+  const [selectedExecutorConfig, setSelectedExecutorConfig] =
+    useState<CodingAgent | null>(
+      scratchExecutorConfig ?? profileExecutorConfig
+    );
   useEffect(() => {
-    setOpencodeConfig(scratchOpencode ?? profileOpencode);
-  }, [profileOpencode, scratchOpencode]);
-  const executorConfig = useMemo<CodingAgent | undefined>(
-    () =>
-      latestProfileId?.executor === BaseCodingAgent.OPENCODE && opencodeConfig
-        ? { OPENCODE: opencodeConfig }
-        : undefined,
-    [latestProfileId?.executor, opencodeConfig]
-  );
+    setSelectedExecutorConfig(scratchExecutorConfig ?? profileExecutorConfig);
+  }, [profileExecutorConfig, scratchExecutorConfig]);
+  const executorConfig = selectedExecutorConfig ?? undefined;
   const executorConfigRef = useRef(executorConfig);
   useEffect(() => {
     executorConfigRef.current = executorConfig;
@@ -257,24 +259,25 @@ export function TaskFollowUpSection({
   const setSelectedVariant = useCallback(
     (variant: string | null) => {
       setVariantFromHook(variant);
-      const profileConfig = currentProfile?.[variant ?? 'DEFAULT'];
-      const nextOpencode =
-        profileConfig && 'OPENCODE' in profileConfig
-          ? profileConfig.OPENCODE
-          : null;
-      setOpencodeConfig(nextOpencode);
-      const nextExecutorConfig = nextOpencode
-        ? { OPENCODE: nextOpencode }
+      const nextExecutorConfig = supportsExecutorOptions
+        ? (currentProfile?.[variant ?? 'DEFAULT'] ?? null)
         : null;
+      setSelectedExecutorConfig(nextExecutorConfig);
       saveToScratch(localMessage, variant, nextExecutorConfig);
     },
-    [setVariantFromHook, saveToScratch, localMessage, currentProfile]
+    [
+      setVariantFromHook,
+      saveToScratch,
+      localMessage,
+      currentProfile,
+      supportsExecutorOptions,
+    ]
   );
 
-  const handleOpencodeConfigChange = useCallback(
-    (config: Opencode) => {
-      setOpencodeConfig(config);
-      saveToScratch(localMessage, selectedVariant, { OPENCODE: config });
+  const handleExecutorConfigChange = useCallback(
+    (config: CodingAgent) => {
+      setSelectedExecutorConfig(config);
+      saveToScratch(localMessage, selectedVariant, config);
     },
     [localMessage, saveToScratch, selectedVariant]
   );
@@ -918,7 +921,7 @@ export function TaskFollowUpSection({
       <div className="p-4">
         <div className="flex flex-row flex-wrap gap-2 items-center">
           <div className="min-w-0 flex-1 flex gap-2 items-center">
-            {latestProfileId?.executor !== BaseCodingAgent.OPENCODE && (
+            {!supportsExecutorOptions && (
               <VariantSelector
                 currentProfile={currentProfile}
                 selectedVariant={selectedVariant}
@@ -926,13 +929,43 @@ export function TaskFollowUpSection({
                 disabled={!isEditable}
               />
             )}
-            {opencodeConfig && (
+            {selectedExecutorConfig && 'OPENCODE' in selectedExecutorConfig && (
               <OpencodeFollowUpOptions
-                config={opencodeConfig}
-                onChange={handleOpencodeConfigChange}
+                config={selectedExecutorConfig.OPENCODE}
+                onChange={(OPENCODE) =>
+                  handleExecutorConfigChange({ OPENCODE })
+                }
                 disabled={!isEditable}
               />
             )}
+            {selectedExecutorConfig && 'KIMI_CLI' in selectedExecutorConfig && (
+              <KimiFollowUpOptions
+                config={selectedExecutorConfig.KIMI_CLI}
+                onChange={(KIMI_CLI) =>
+                  handleExecutorConfigChange({ KIMI_CLI })
+                }
+                disabled={!isEditable}
+              />
+            )}
+            {selectedExecutorConfig && 'CODEX' in selectedExecutorConfig && (
+              <CodexFollowUpOptions
+                config={selectedExecutorConfig.CODEX}
+                currentProfile={currentProfile}
+                onChange={(CODEX) => handleExecutorConfigChange({ CODEX })}
+                disabled={!isEditable}
+              />
+            )}
+            {selectedExecutorConfig &&
+              'CLAUDE_CODE' in selectedExecutorConfig && (
+                <ClaudeFollowUpOptions
+                  config={selectedExecutorConfig.CLAUDE_CODE}
+                  currentProfile={currentProfile}
+                  onChange={(CLAUDE_CODE) =>
+                    handleExecutorConfigChange({ CLAUDE_CODE })
+                  }
+                  disabled={!isEditable}
+                />
+              )}
             <LegacyContextUsage />
           </div>
 

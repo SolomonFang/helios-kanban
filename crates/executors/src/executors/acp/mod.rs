@@ -1,4 +1,5 @@
 pub mod client;
+pub mod config_options;
 pub mod harness;
 pub mod normalize_logs;
 pub mod session;

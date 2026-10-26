@@ -9,84 +9,90 @@ use tokio::{
 };
 use ts_rs::TS;
 
-use super::Opencode;
-use crate::{env::ExecutionEnv, executors::ExecutorError};
+use crate::{
+    command::{CmdOverrides, CommandParts},
+    env::ExecutionEnv,
+    executors::ExecutorError,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq)]
-pub struct OpencodeConfigOption {
+pub struct AcpConfigOption {
     pub value: String,
     pub label: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq)]
-pub struct OpencodeModelOption {
+pub struct AcpModelOption {
     pub value: String,
     pub label: String,
-    pub variants: Vec<OpencodeConfigOption>,
+    pub variants: Vec<AcpConfigOption>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq)]
-pub struct OpencodeConfigOptions {
-    pub models: Vec<OpencodeModelOption>,
-    pub agents: Vec<OpencodeConfigOption>,
+pub struct AcpConfigOptions {
+    pub models: Vec<AcpModelOption>,
+    pub agents: Vec<AcpConfigOption>,
 }
 
-impl Opencode {
-    pub async fn discover_config_options(
-        &self,
-        current_dir: &Path,
-        env: &ExecutionEnv,
-    ) -> Result<OpencodeConfigOptions, ExecutorError> {
-        let command_parts = self.build_command_builder()?.build_initial()?;
-        let (program_path, args) = command_parts.into_resolved().await?;
-        let env = self.setup_config_env(env);
+pub async fn discover_config_options(
+    command_parts: CommandParts,
+    current_dir: &Path,
+    env: &ExecutionEnv,
+    cmd_overrides: &CmdOverrides,
+) -> Result<AcpConfigOptions, ExecutorError> {
+    let (program_path, args) = command_parts.into_resolved().await?;
 
-        let mut command = Command::new(program_path);
-        command
-            .kill_on_drop(true)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .current_dir(current_dir)
-            .env("NPM_CONFIG_LOGLEVEL", "error")
-            .env("NODE_NO_WARNINGS", "1")
-            .args(&args);
-        env.with_profile(&self.cmd).apply_to_command(&mut command);
+    let mut command = Command::new(program_path);
+    command
+        .kill_on_drop(true)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .current_dir(current_dir)
+        .env("NPM_CONFIG_LOGLEVEL", "error")
+        .env("NODE_NO_WARNINGS", "1")
+        .args(&args);
+    env.clone()
+        .with_profile(cmd_overrides)
+        .apply_to_command(&mut command);
 
-        let mut child = command.group_spawn()?;
-        let stdin = child.inner().stdin.take().ok_or_else(|| {
-            ExecutorError::Io(std::io::Error::other("OpenCode ACP missing stdin"))
-        })?;
-        let stdout = child.inner().stdout.take().ok_or_else(|| {
-            ExecutorError::Io(std::io::Error::other("OpenCode ACP missing stdout"))
-        })?;
-        if let Some(stderr) = child.inner().stderr.take() {
-            tokio::spawn(async move {
-                let mut lines = BufReader::new(stderr).lines();
-                while let Ok(Some(_)) = lines.next_line().await {}
-            });
-        }
-
-        let result = tokio::time::timeout(
-            Duration::from_secs(30),
-            probe_config_options(stdin, stdout, current_dir),
-        )
-        .await
-        .map_err(|_| {
-            ExecutorError::Io(std::io::Error::other(
-                "Timed out reading OpenCode configuration options",
-            ))
+    let mut child = command.group_spawn()?;
+    let stdin = child
+        .inner()
+        .stdin
+        .take()
+        .ok_or_else(|| ExecutorError::Io(std::io::Error::other("ACP missing stdin")))?;
+    let stdout = child
+        .inner()
+        .stdout
+        .take()
+        .ok_or_else(|| ExecutorError::Io(std::io::Error::other("ACP missing stdout")))?;
+    if let Some(stderr) = child.inner().stderr.take() {
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(_)) = lines.next_line().await {}
         });
-        let _ = workspace_utils::process::kill_process_group(&mut child).await;
-        result?
     }
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(30),
+        probe_config_options(stdin, stdout, current_dir),
+    )
+    .await
+    .map_err(|_| {
+        ExecutorError::Io(std::io::Error::other(
+            "Timed out reading ACP configuration options",
+        ))
+    });
+    let _ = workspace_utils::process::kill_process_group(&mut child).await;
+    result?
 }
 
 async fn probe_config_options(
     mut stdin: ChildStdin,
     stdout: ChildStdout,
     current_dir: &Path,
-) -> Result<OpencodeConfigOptions, ExecutorError> {
+) -> Result<AcpConfigOptions, ExecutorError> {
     let mut lines = BufReader::new(stdout).lines();
     let mut next_id = 1;
 
@@ -118,7 +124,7 @@ async fn probe_config_options(
         .and_then(Value::as_str)
         .ok_or_else(|| {
             ExecutorError::Io(std::io::Error::other(
-                "OpenCode session/new did not return a session ID",
+                "ACP session/new did not return a session ID",
             ))
         })?
         .to_string();
@@ -146,19 +152,20 @@ async fn probe_config_options(
         .await?;
         let updated_options = parse_config_options(&updated)?;
         let variants = options_by_id(&updated_options, "effort")
+            .or_else(|| options_by_id(&updated_options, "thinking"))
             .map(parse_options)
             .unwrap_or_default()
             .into_iter()
             .filter(|option| option.value != "default")
             .collect();
-        models.push(OpencodeModelOption {
+        models.push(AcpModelOption {
             value: model.value,
             label: model.label,
             variants,
         });
     }
 
-    Ok(OpencodeConfigOptions { models, agents })
+    Ok(AcpConfigOptions { models, agents })
 }
 
 async fn request(
@@ -225,14 +232,14 @@ fn options_by_id<'a>(options: &[&'a Value], id: &str) -> Option<&'a Value> {
         .find(|option| option.get("id").and_then(Value::as_str) == Some(id))
 }
 
-fn parse_options(value: &Value) -> Vec<OpencodeConfigOption> {
+fn parse_options(value: &Value) -> Vec<AcpConfigOption> {
     value
         .get("options")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
         .filter_map(|option| {
-            Some(OpencodeConfigOption {
+            Some(AcpConfigOption {
                 value: option.get("value")?.as_str()?.to_string(),
                 label: option
                     .get("name")
