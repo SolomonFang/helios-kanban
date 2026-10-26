@@ -5,6 +5,7 @@ import { RJSFValidationError } from '@rjsf/utils';
 import validator from '@rjsf/validator-ajv8';
 import { useTranslation } from 'react-i18next';
 import { BaseCodingAgent } from 'shared/types';
+import { useOpencodeConfigSchema } from '@/hooks/useOpencodeConfigSchema';
 import { settingsRjsfTheme } from './rjsf/theme';
 import { SettingsSaveBar } from './SettingsComponents';
 
@@ -37,9 +38,14 @@ export function ExecutorConfigForm({
     RJSFValidationError[]
   >([]);
 
-  const schema = useMemo(() => {
+  const baseSchema = useMemo(() => {
     return schemas[executor];
   }, [executor]);
+  const { schema, normalizeFormData } = useOpencodeConfigSchema(
+    executor,
+    baseSchema,
+    formData
+  );
 
   // Custom handler for env field updates
   const handleEnvChange = useCallback(
@@ -79,7 +85,7 @@ export function ExecutorConfigForm({
   }, [value, executor]);
 
   const handleChange = (event: IChangeEvent<unknown>) => {
-    const newFormData = event.formData;
+    const newFormData = normalizeFormData(formData, event.formData);
     setFormData(newFormData);
     if (onChange) {
       onChange(newFormData);

@@ -523,6 +523,12 @@ name: string, description?: string | null, };
 
 export type AvailabilityInfo = { "type": "LOGIN_DETECTED", last_auth_timestamp: bigint, } | { "type": "INSTALLATION_FOUND" } | { "type": "NOT_FOUND" };
 
+export type OpencodeConfigOption = { value: string, label: string, };
+
+export type OpencodeModelOption = { value: string, label: string, variants: Array<OpencodeConfigOption>, };
+
+export type OpencodeConfigOptions = { models: Array<OpencodeModelOption>, agents: Array<OpencodeConfigOption>, };
+
 export type CommandBuilder = { 
 /**
  * Base executable command (e.g., "npx -y @anthropic-ai/claude-code@latest")

@@ -14,8 +14,10 @@ use axum::{
 };
 use deployment::{Deployment, DeploymentError};
 use executors::{
+    env::{ExecutionEnv, RepoContext},
     executors::{
-        AvailabilityInfo, BaseAgentCapability, BaseCodingAgent, StandardCodingAgentExecutor,
+        AvailabilityInfo, BaseAgentCapability, BaseCodingAgent, CodingAgent,
+        StandardCodingAgentExecutor, opencode::OpencodeConfigOptions,
     },
     mcp_config::{McpConfig, read_agent_config, write_agent_config},
     profile::{ExecutorConfigs, ExecutorProfileId},
@@ -49,6 +51,10 @@ pub fn router() -> Router<DeploymentImpl> {
             get(check_editor_availability),
         )
         .route("/agents/check-availability", get(check_agent_availability))
+        .route(
+            "/agents/opencode/config-options",
+            get(get_opencode_config_options),
+        )
         .route(
             "/agents/slash-commands/ws",
             get(stream_agent_slash_commands_ws),
@@ -501,6 +507,23 @@ async fn check_agent_availability(
     };
 
     ResponseJson(ApiResponse::success(info))
+}
+
+async fn get_opencode_config_options(
+    State(_deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<OpencodeConfigOptions>>, ApiError> {
+    let profiles = ExecutorConfigs::get_cached();
+    let profile_id = ExecutorProfileId::new(BaseCodingAgent::Opencode);
+    let Some(CodingAgent::Opencode(opencode)) = profiles.get_coding_agent(&profile_id) else {
+        return Err(ApiError::BadRequest(
+            "OpenCode default profile not found".to_string(),
+        ));
+    };
+    let current_dir = std::env::current_dir()?;
+    let env = ExecutionEnv::new(RepoContext::default(), false, String::new());
+    let options = opencode.discover_config_options(&current_dir, &env).await?;
+
+    Ok(ResponseJson(ApiResponse::success(options)))
 }
 
 #[derive(Debug, Deserialize)]

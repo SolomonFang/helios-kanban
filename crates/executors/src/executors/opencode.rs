@@ -8,6 +8,10 @@ use serde_json::{Map, Value};
 use ts_rs::TS;
 use workspace_utils::msg_store::MsgStore;
 
+mod config_options;
+
+pub use config_options::{OpencodeConfigOption, OpencodeConfigOptions, OpencodeModelOption};
+
 use crate::{
     approvals::ExecutorApprovalService,
     command::{CmdOverrides, CommandBuildError, CommandBuilder, apply_overrides},

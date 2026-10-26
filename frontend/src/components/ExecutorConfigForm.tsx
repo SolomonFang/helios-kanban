@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { shadcnTheme } from './rjsf';
 import { BaseCodingAgent } from 'shared/types';
+import { useOpencodeConfigSchema } from '@/hooks/useOpencodeConfigSchema';
 // Using custom shadcn/ui widgets instead of @rjsf/shadcn theme
 
 interface ExecutorConfigFormProps {
@@ -42,9 +43,14 @@ export function ExecutorConfigForm({
     RJSFValidationError[]
   >([]);
 
-  const schema = useMemo(() => {
+  const baseSchema = useMemo(() => {
     return schemas[executor];
   }, [executor]);
+  const { schema, normalizeFormData } = useOpencodeConfigSchema(
+    executor,
+    baseSchema,
+    formData
+  );
 
   // Custom handler for env field updates
   const handleEnvChange = useCallback(
@@ -84,7 +90,7 @@ export function ExecutorConfigForm({
   }, [value, executor]);
 
   const handleChange = (event: IChangeEvent<unknown>) => {
-    const newFormData = event.formData;
+    const newFormData = normalizeFormData(formData, event.formData);
     setFormData(newFormData);
     if (onChange) {
       onChange(newFormData);

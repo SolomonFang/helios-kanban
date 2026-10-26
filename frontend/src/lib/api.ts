@@ -95,6 +95,7 @@ import {
   CreateFromPrError,
   MigrationRequest,
   MigrationResponse,
+  OpencodeConfigOptions,
 } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { createWorkspaceWithSession } from '@/types/attempt';
@@ -1047,6 +1048,13 @@ export const mcpServersApi = {
         response
       );
     }
+  },
+};
+
+export const opencodeApi = {
+  configOptions: async (): Promise<OpencodeConfigOptions> => {
+    const response = await makeRequest('/api/agents/opencode/config-options');
+    return handleApiResponse<OpencodeConfigOptions>(response);
   },
 };
 
