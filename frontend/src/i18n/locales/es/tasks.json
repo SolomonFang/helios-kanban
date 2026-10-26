@@ -243,6 +243,7 @@
     "kimiOptions": "Opciones de ejecución de Kimi",
     "codexOptions": "Opciones de ejecución de Codex",
     "claudeOptions": "Opciones de ejecución de Claude",
+    "deepseekOptions": "Opciones de ejecución de DeepSeek",
     "clearReviewComments": "Clear Review Comments",
     "edit": "Edit",
     "queueForNextTurn": "Queue for next turn",

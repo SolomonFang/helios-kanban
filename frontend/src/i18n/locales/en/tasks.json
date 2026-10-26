@@ -228,6 +228,7 @@
     "kimiOptions": "Kimi execution options",
     "codexOptions": "Codex execution options",
     "claudeOptions": "Claude execution options",
+    "deepseekOptions": "DeepSeek execution options",
     "stop": "Stop",
     "clearReviewComments": "Clear Review Comments",
     "resolveConflicts": "Resolve conflicts",

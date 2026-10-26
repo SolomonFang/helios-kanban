@@ -228,6 +228,7 @@
     "kimiOptions": "Options d'exécution Kimi",
     "codexOptions": "Options d'exécution Codex",
     "claudeOptions": "Options d'exécution Claude",
+    "deepseekOptions": "Options d'exécution DeepSeek",
     "stop": "Arrêter",
     "clearReviewComments": "Effacer les commentaires de révision",
     "resolveConflicts": "Résoudre les conflits",

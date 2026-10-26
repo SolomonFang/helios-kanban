@@ -241,6 +241,7 @@
     "kimiOptions": "Kimi 執行選項",
     "codexOptions": "Codex 執行選項",
     "claudeOptions": "Claude 執行選項",
+    "deepseekOptions": "DeepSeek 執行選項",
     "stop": "停止",
     "clearReviewComments": "清除審查評論",
     "resolveConflicts": "解決衝突",

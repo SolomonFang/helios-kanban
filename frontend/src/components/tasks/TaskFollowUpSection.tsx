@@ -50,6 +50,7 @@ import { OpencodeFollowUpOptions } from '@/components/tasks/OpencodeFollowUpOpti
 import { KimiFollowUpOptions } from '@/components/tasks/KimiFollowUpOptions';
 import { CodexFollowUpOptions } from '@/components/tasks/CodexFollowUpOptions';
 import { ClaudeFollowUpOptions } from '@/components/tasks/ClaudeFollowUpOptions';
+import { DeepseekFollowUpOptions } from '@/components/tasks/DeepseekFollowUpOptions';
 import { LegacyContextUsage } from '@/components/tasks/LegacyContextUsage';
 import { useAttemptBranch } from '@/hooks/useAttemptBranch';
 import { FollowUpConflictSection } from '@/components/tasks/follow-up/FollowUpConflictSection';
@@ -184,6 +185,7 @@ export function TaskFollowUpSection({
     BaseCodingAgent.KIMI_CLI,
     BaseCodingAgent.CODEX,
     BaseCodingAgent.CLAUDE_CODE,
+    BaseCodingAgent.DEEPSEEK_HARNESS,
   ].includes(latestProfileId?.executor ?? BaseCodingAgent.AMP);
   const profileExecutorConfig = useMemo(() => {
     if (!supportsExecutorOptions) return null;
@@ -962,6 +964,17 @@ export function TaskFollowUpSection({
                   currentProfile={currentProfile}
                   onChange={(CLAUDE_CODE) =>
                     handleExecutorConfigChange({ CLAUDE_CODE })
+                  }
+                  disabled={!isEditable}
+                />
+              )}
+            {selectedExecutorConfig &&
+              'DEEPSEEK_HARNESS' in selectedExecutorConfig && (
+                <DeepseekFollowUpOptions
+                  config={selectedExecutorConfig.DEEPSEEK_HARNESS}
+                  currentProfile={currentProfile}
+                  onChange={(DEEPSEEK_HARNESS) =>
+                    handleExecutorConfigChange({ DEEPSEEK_HARNESS })
                   }
                   disabled={!isEditable}
                 />

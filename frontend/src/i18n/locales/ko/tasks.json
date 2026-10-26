@@ -243,6 +243,7 @@
     "kimiOptions": "Kimi 실행 옵션",
     "codexOptions": "Codex 실행 옵션",
     "claudeOptions": "Claude 실행 옵션",
+    "deepseekOptions": "DeepSeek 실행 옵션",
     "clearReviewComments": "Clear Review Comments",
     "edit": "Edit",
     "queueForNextTurn": "Queue for next turn",
