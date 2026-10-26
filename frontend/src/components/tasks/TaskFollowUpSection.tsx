@@ -918,12 +918,14 @@ export function TaskFollowUpSection({
       <div className="p-4">
         <div className="flex flex-row flex-wrap gap-2 items-center">
           <div className="min-w-0 flex-1 flex gap-2 items-center">
-            <VariantSelector
-              currentProfile={currentProfile}
-              selectedVariant={selectedVariant}
-              onChange={setSelectedVariant}
-              disabled={!isEditable}
-            />
+            {latestProfileId?.executor !== BaseCodingAgent.OPENCODE && (
+              <VariantSelector
+                currentProfile={currentProfile}
+                selectedVariant={selectedVariant}
+                onChange={setSelectedVariant}
+                disabled={!isEditable}
+              />
+            )}
             {opencodeConfig && (
               <OpencodeFollowUpOptions
                 config={opencodeConfig}

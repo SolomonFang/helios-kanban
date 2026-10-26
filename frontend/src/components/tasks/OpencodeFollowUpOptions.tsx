@@ -102,6 +102,27 @@ export function OpencodeFollowUpOptions({ config, onChange, disabled }: Props) {
         </DropdownMenuSub>
 
         <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            {t('followUp.approvalMode')}
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuRadioGroup
+              value={config.auto_approve ? 'auto' : 'manual'}
+              onValueChange={(value) =>
+                onChange({ ...config, auto_approve: value === 'auto' })
+              }
+            >
+              <DropdownMenuRadioItem value="auto">
+                {t('followUp.autoApprove')}
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="manual">
+                {t('followUp.manualApprove')}
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+
+        <DropdownMenuSub>
           <DropdownMenuSubTrigger>{t('followUp.model')}</DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
             <DropdownMenuRadioGroup
