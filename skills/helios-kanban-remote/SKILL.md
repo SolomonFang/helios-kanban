@@ -169,9 +169,27 @@ https://github.com/SolomonFang/vibe-kanban/blob/hly-dev/skills/helios-kanban-rem
 
 ## MCP (same machine) vs this skill (remote)
 
-- **Same host as the kanban server** → prefer the MCP server. It covers the full orchestration surface: project/task CRUD, `create_project`, `create_task_and_start`, `start/stop_workspace_session`, `follow_up_session`, `queue_message`, `get_task_status`, `list_approvals` / `respond_to_approval`, `list_branches`, `list_tags`.
+- **Same host as the kanban server** → prefer the MCP server. It covers the full orchestration surface: project/task CRUD, `create_project`, `create_task_and_start`, `start/stop_workspace_session`, `list_workspace_sessions`, `follow_up_session`, `queue_message`, `get_task_status`, `list_approvals` / `respond_to_approval`, `list_branches`, `list_tags`.
 - **Remote / any other end** (phone bot, another host, server automation) → use `hk.sh` over HTTP, as this skill documents.
 - New capabilities land in the MCP server first; `hk.sh` mirrors them for remote use. If the two drift, the REST API in [reference.md](reference.md) is the source of truth.
+
+### Continue a historical conversation through MCP
+
+When the user asks to continue an existing conversation rather than start a new task:
+
+1. Find the `workspace_id` with `get_task_status`, then call `list_workspace_sessions` with that ID. Sessions are returned most recently used first.
+2. Choose the requested historical `session_id`; do not assume it is the latest session.
+3. If that session is inactive, call `follow_up_session` with `session_id` and `prompt`. If it is still running, call `queue_message` with `session_id` and `message` instead.
+4. Omit `executor` and `variant` to reuse the session's executor. The server rejects executor changes for an existing session.
+
+```json
+{
+  "session_id": "123e4567-e89b-12d3-a456-426614174000",
+  "prompt": "Continue the previous task and summarise the remaining work."
+}
+```
+
+`follow_up_session` starts a new execution in the same workspace and preserves the selected conversation; it does not create a new task or session.
 
 ```json
 {

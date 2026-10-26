@@ -76,6 +76,8 @@ helios-kanban-remote/
 
 同机跑 Kanban 时优先 MCP，覆盖完整编排面。跨端 / 远程（手机 bot、另一台机器、服务器自动化）用 `hk.sh`。能力先上 MCP，再镜像到 CLI；不一致时以 [reference.md](reference.md) 的 REST API 为准。
 
+继续历史会话时，先用 `list_workspace_sessions` 查询指定工作区的全部会话，再对选中的 `session_id` 调用 `follow_up_session`；会话仍在运行时改用 `queue_message`。完整步骤见 [SKILL.md](SKILL.md#continue-a-historical-conversation-through-mcp)。
+
 ```json
 {
   "helios_kanban": {
