@@ -21,6 +21,7 @@ use executors::{
     actions::{
         ExecutorAction, ExecutorActionType, coding_agent_follow_up::CodingAgentFollowUpRequest,
     },
+    executors::{BaseCodingAgent, CodingAgent},
     profile::ExecutorProfileId,
 };
 use serde::Deserialize;
@@ -87,6 +88,9 @@ pub async fn create_session(
 pub struct CreateFollowUpAttempt {
     pub prompt: String,
     pub executor_profile_id: ExecutorProfileId,
+    #[serde(default)]
+    #[ts(optional)]
+    pub executor_config: Option<Box<CodingAgent>>,
     pub retry_process_id: Option<Uuid>,
     pub force_when_dirty: Option<bool>,
     pub perform_git_reset: Option<bool>,
@@ -121,6 +125,13 @@ pub async fn follow_up(
         .await?;
 
     let executor_profile_id = payload.executor_profile_id;
+    if payload.executor_config.as_ref().is_some_and(|config| {
+        BaseCodingAgent::from(config.as_ref()) != executor_profile_id.executor
+    }) {
+        return Err(ApiError::BadRequest(
+            "Executor override does not match the executor profile".to_string(),
+        ));
+    }
 
     // Validate executor matches session if session has prior executions
     let expected_executor: Option<String> =
@@ -173,6 +184,7 @@ pub async fn follow_up(
             session_id: info.session_id,
             reset_to_message_id: if is_reset { info.message_id } else { None },
             executor_profile_id: executor_profile_id.clone(),
+            executor_config: payload.executor_config,
             working_dir: working_dir.clone(),
         })
     } else {
@@ -180,6 +192,7 @@ pub async fn follow_up(
             executors::actions::coding_agent_initial::CodingAgentInitialRequest {
                 prompt,
                 executor_profile_id: executor_profile_id.clone(),
+                executor_config: payload.executor_config,
                 working_dir,
             },
         )

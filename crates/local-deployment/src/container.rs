@@ -1005,12 +1005,14 @@ impl LocalContainerService {
                 session_id: info.session_id,
                 reset_to_message_id: None,
                 executor_profile_id: executor_profile_id.clone(),
+                executor_config: queued_data.executor_config.clone(),
                 working_dir: working_dir.clone(),
             })
         } else {
             ExecutorActionType::CodingAgentInitialRequest(CodingAgentInitialRequest {
                 prompt: queued_data.message.clone(),
                 executor_profile_id: executor_profile_id.clone(),
+                executor_config: queued_data.executor_config.clone(),
                 working_dir,
             })
         };

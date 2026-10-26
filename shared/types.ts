@@ -62,7 +62,7 @@ export type CreateTask = { project_id: string, title: string, description: strin
 
 export type UpdateTask = { title: string | null, description: string | null, status: TaskStatus | null, priority: TaskPriority | null, task_type: TaskType | null, parent_workspace_id: string | null, image_ids: Array<string> | null, iteration: string | null, };
 
-export type DraftFollowUpData = { message: string, executor_profile_id: ExecutorProfileId, };
+export type DraftFollowUpData = { message: string, executor_profile_id: ExecutorProfileId, executor_config?: CodingAgent, };
 
 export type DraftWorkspaceData = { message: string, project_id: string | null, repos: Array<DraftWorkspaceRepo>, selected_profile: ExecutorProfileId | null, linked_issue: DraftWorkspaceLinkedIssue | null, };
 
@@ -296,7 +296,7 @@ export type CheckAgentAvailabilityQuery = { executor: BaseCodingAgent, };
 
 export type CurrentUserResponse = { user_id: string, };
 
-export type CreateFollowUpAttempt = { prompt: string, executor_profile_id: ExecutorProfileId, retry_process_id: string | null, force_when_dirty: boolean | null, perform_git_reset: boolean | null, };
+export type CreateFollowUpAttempt = { prompt: string, executor_profile_id: ExecutorProfileId, executor_config?: CodingAgent, retry_process_id: string | null, force_when_dirty: boolean | null, perform_git_reset: boolean | null, };
 
 export type ResetProcessRequest = { process_id: string, force_when_dirty: boolean | null, perform_git_reset: boolean | null, };
 
@@ -611,7 +611,7 @@ export type CodingAgentInitialRequest = { prompt: string,
 /**
  * Executor profile specification
  */
-executor_profile_id: ExecutorProfileId, 
+executor_profile_id: ExecutorProfileId, executor_config?: CodingAgent, 
 /**
  * Optional relative path to execute the agent in (relative to container_ref).
  * If None, uses the container_ref directory directly.
@@ -622,7 +622,7 @@ export type CodingAgentFollowUpRequest = { prompt: string, session_id: string, r
 /**
  * Executor profile specification
  */
-executor_profile_id: ExecutorProfileId, 
+executor_profile_id: ExecutorProfileId, executor_config?: CodingAgent, 
 /**
  * Optional relative path to execute the agent in (relative to container_ref).
  * If None, uses the container_ref directory directly.

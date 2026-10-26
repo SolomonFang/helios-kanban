@@ -229,6 +229,11 @@
     "noTasks": "이 프로젝트에 대한 작업을 찾을 수 없습니다."
   },
   "followUp": {
+    "opencodeOptions": "OpenCode 실행 옵션",
+    "agent": "에이전트",
+    "model": "모델",
+    "variant": "변형",
+    "defaultOption": "기본값",
     "clearReviewComments": "Clear Review Comments",
     "edit": "Edit",
     "queueForNextTurn": "Queue for next turn",

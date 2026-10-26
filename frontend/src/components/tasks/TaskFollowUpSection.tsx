@@ -25,7 +25,13 @@ import {
 } from '@/components/ui/tooltip';
 //
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { ScratchType, type TaskWithAttemptStatus } from 'shared/types';
+import {
+  BaseCodingAgent,
+  ScratchType,
+  type CodingAgent,
+  type Opencode,
+  type TaskWithAttemptStatus,
+} from 'shared/types';
 import { useBranchStatus } from '@/hooks';
 import { useAttemptRepo } from '@/hooks/useAttemptRepo';
 import { useAttemptExecution } from '@/hooks/useAttemptExecution';
@@ -41,6 +47,7 @@ import { useHotkeysContext } from 'react-hotkeys-hook';
 import { useProject } from '@/contexts/ProjectContext';
 //
 import { VariantSelector } from '@/components/tasks/VariantSelector';
+import { OpencodeFollowUpOptions } from '@/components/tasks/OpencodeFollowUpOptions';
 import { LegacyContextUsage } from '@/components/tasks/LegacyContextUsage';
 import { useAttemptBranch } from '@/hooks/useAttemptBranch';
 import { FollowUpConflictSection } from '@/components/tasks/follow-up/FollowUpConflictSection';
@@ -170,6 +177,32 @@ export function TaskFollowUpSection({
       scratchVariant: scratchData?.executor_profile_id?.variant,
     });
 
+  const profileOpencode = useMemo(() => {
+    const config = currentProfile?.[selectedVariant ?? 'DEFAULT'];
+    return config && 'OPENCODE' in config ? config.OPENCODE : null;
+  }, [currentProfile, selectedVariant]);
+  const scratchOpencode =
+    scratchData?.executor_config && 'OPENCODE' in scratchData.executor_config
+      ? scratchData.executor_config.OPENCODE
+      : null;
+  const [opencodeConfig, setOpencodeConfig] = useState<Opencode | null>(
+    scratchOpencode ?? profileOpencode
+  );
+  useEffect(() => {
+    setOpencodeConfig(scratchOpencode ?? profileOpencode);
+  }, [profileOpencode, scratchOpencode]);
+  const executorConfig = useMemo<CodingAgent | undefined>(
+    () =>
+      latestProfileId?.executor === BaseCodingAgent.OPENCODE && opencodeConfig
+        ? { OPENCODE: opencodeConfig }
+        : undefined,
+    [latestProfileId?.executor, opencodeConfig]
+  );
+  const executorConfigRef = useRef(executorConfig);
+  useEffect(() => {
+    executorConfigRef.current = executorConfig;
+  }, [executorConfig]);
+
   // Ref to track current variant for use in message save callback
   const variantRef = useRef<string | null>(selectedVariant);
   useEffect(() => {
@@ -185,11 +218,20 @@ export function TaskFollowUpSection({
   // Save scratch helper (used for both message and variant changes)
   // Uses scratchRef to avoid callback invalidation when scratch updates
   const saveToScratch = useCallback(
-    async (message: string, variant: string | null) => {
+    async (
+      message: string,
+      variant: string | null,
+      configOverride?: CodingAgent | null
+    ) => {
       if (!workspaceId || !latestProfileId?.executor) return;
+      const executorConfig =
+        configOverride === undefined
+          ? executorConfigRef.current
+          : (configOverride ?? undefined);
       // Don't create empty scratch entries - only save if there's actual content,
-      // a variant is selected, or scratch already exists (to allow clearing a draft)
-      if (!message.trim() && !variant && !scratchRef.current) return;
+      // a variant or executor config is selected, or scratch already exists.
+      if (!message.trim() && !variant && !executorConfig && !scratchRef.current)
+        return;
       try {
         await updateScratch({
           payload: {
@@ -200,6 +242,7 @@ export function TaskFollowUpSection({
                 executor: latestProfileId.executor,
                 variant,
               },
+              executor_config: executorConfig,
             },
           },
         });
@@ -214,10 +257,26 @@ export function TaskFollowUpSection({
   const setSelectedVariant = useCallback(
     (variant: string | null) => {
       setVariantFromHook(variant);
-      // Save immediately when user changes variant
-      saveToScratch(localMessage, variant);
+      const profileConfig = currentProfile?.[variant ?? 'DEFAULT'];
+      const nextOpencode =
+        profileConfig && 'OPENCODE' in profileConfig
+          ? profileConfig.OPENCODE
+          : null;
+      setOpencodeConfig(nextOpencode);
+      const nextExecutorConfig = nextOpencode
+        ? { OPENCODE: nextOpencode }
+        : null;
+      saveToScratch(localMessage, variant, nextExecutorConfig);
     },
-    [setVariantFromHook, saveToScratch, localMessage]
+    [setVariantFromHook, saveToScratch, localMessage, currentProfile]
+  );
+
+  const handleOpencodeConfigChange = useCallback(
+    (config: Opencode) => {
+      setOpencodeConfig(config);
+      saveToScratch(localMessage, selectedVariant, { OPENCODE: config });
+    },
+    [localMessage, saveToScratch, selectedVariant]
   );
 
   // Debounced save for message changes (uses current variant from ref)
@@ -269,10 +328,17 @@ export function TaskFollowUpSection({
     mutationFn: ({
       message,
       executor_profile_id,
+      executor_config,
     }: {
       message: string;
       executor_profile_id: ExecutorProfileId;
-    }) => queueApi.queue(sessionId!, { message, executor_profile_id }),
+      executor_config?: CodingAgent;
+    }) =>
+      queueApi.queue(sessionId!, {
+        message,
+        executor_profile_id,
+        executor_config,
+      }),
     onSuccess: (status) => {
       queryClient.setQueryData([QUEUE_STATUS_KEY, sessionId], status);
     },
@@ -286,11 +352,16 @@ export function TaskFollowUpSection({
   });
 
   const queueMessage = useCallback(
-    async (message: string, executorProfileId: ExecutorProfileId) => {
+    async (
+      message: string,
+      executorProfileId: ExecutorProfileId,
+      config?: CodingAgent
+    ) => {
       if (!sessionId) return;
       await queueMutation.mutateAsync({
         message,
         executor_profile_id: executorProfileId,
+        executor_config: config,
       });
     },
     [sessionId, queueMutation]
@@ -374,6 +445,7 @@ export function TaskFollowUpSection({
       clickedMarkdown,
       executor: latestProfileId?.executor ?? null,
       variant: selectedVariant,
+      executorConfig,
       clearComments,
       clearClickedElements,
       onAfterSendCleanup: () => {
@@ -468,10 +540,14 @@ export function TaskFollowUpSection({
         Boolean
       )
     );
-    await queueMessage(prompt, {
-      executor: latestProfileId.executor,
-      variant: selectedVariant,
-    });
+    await queueMessage(
+      prompt,
+      {
+        executor: latestProfileId.executor,
+        variant: selectedVariant,
+      },
+      executorConfig
+    );
     setQueueEditNotice(false);
   }, [
     canTypeFollowUp,
@@ -481,6 +557,7 @@ export function TaskFollowUpSection({
     clickedMarkdown,
     latestProfileId,
     selectedVariant,
+    executorConfig,
     queueMessage,
     cancelDebouncedSave,
     saveToScratch,
@@ -847,6 +924,13 @@ export function TaskFollowUpSection({
               onChange={setSelectedVariant}
               disabled={!isEditable}
             />
+            {opencodeConfig && (
+              <OpencodeFollowUpOptions
+                config={opencodeConfig}
+                onChange={handleOpencodeConfigChange}
+                disabled={!isEditable}
+              />
+            )}
             <LegacyContextUsage />
           </div>
 

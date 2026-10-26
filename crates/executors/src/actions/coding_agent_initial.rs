@@ -10,7 +10,9 @@ use crate::{
     actions::Executable,
     approvals::ExecutorApprovalService,
     env::ExecutionEnv,
-    executors::{BaseCodingAgent, ExecutorError, SpawnedChild, StandardCodingAgentExecutor},
+    executors::{
+        BaseCodingAgent, CodingAgent, ExecutorError, SpawnedChild, StandardCodingAgentExecutor,
+    },
     profile::ExecutorProfileId,
 };
 
@@ -21,6 +23,9 @@ pub struct CodingAgentInitialRequest {
     #[serde(alias = "profile_variant_label")]
     // Backwards compatibility with ProfileVariantIds, esp stored in DB under ExecutorAction
     pub executor_profile_id: ExecutorProfileId,
+    #[serde(default)]
+    #[ts(optional)]
+    pub executor_config: Option<Box<CodingAgent>>,
     /// Optional relative path to execute the agent in (relative to container_ref).
     /// If None, uses the container_ref directory directly.
     #[serde(default)]
@@ -61,11 +66,14 @@ impl Executable for CodingAgentInitialRequest {
         #[cfg(not(feature = "qa-mode"))]
         {
             let executor_profile_id = self.executor_profile_id.clone();
-            let mut agent = ExecutorConfigs::get_cached()
-                .get_coding_agent(&executor_profile_id)
-                .ok_or(ExecutorError::UnknownExecutorType(
-                    executor_profile_id.to_string(),
-                ))?;
+            let mut agent = match self.executor_config.clone() {
+                Some(agent) => *agent,
+                None => ExecutorConfigs::get_cached()
+                    .get_coding_agent(&executor_profile_id)
+                    .ok_or(ExecutorError::UnknownExecutorType(
+                        executor_profile_id.to_string(),
+                    ))?,
+            };
 
             agent.use_approvals(approvals.clone());
 

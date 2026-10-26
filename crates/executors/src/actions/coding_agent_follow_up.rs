@@ -10,7 +10,9 @@ use crate::{
     actions::Executable,
     approvals::ExecutorApprovalService,
     env::ExecutionEnv,
-    executors::{BaseCodingAgent, ExecutorError, SpawnedChild, StandardCodingAgentExecutor},
+    executors::{
+        BaseCodingAgent, CodingAgent, ExecutorError, SpawnedChild, StandardCodingAgentExecutor,
+    },
     profile::ExecutorProfileId,
 };
 
@@ -24,6 +26,9 @@ pub struct CodingAgentFollowUpRequest {
     #[serde(alias = "profile_variant_label")]
     // Backwards compatibility with ProfileVariantIds, esp stored in DB under ExecutorAction
     pub executor_profile_id: ExecutorProfileId,
+    #[serde(default)]
+    #[ts(optional)]
+    pub executor_config: Option<Box<CodingAgent>>,
     /// Optional relative path to execute the agent in (relative to container_ref).
     /// If None, uses the container_ref directory directly.
     #[serde(default)]
@@ -77,11 +82,14 @@ impl Executable for CodingAgentFollowUpRequest {
         #[cfg(not(feature = "qa-mode"))]
         {
             let executor_profile_id = self.get_executor_profile_id();
-            let mut agent = ExecutorConfigs::get_cached()
-                .get_coding_agent(&executor_profile_id)
-                .ok_or(ExecutorError::UnknownExecutorType(
-                    executor_profile_id.to_string(),
-                ))?;
+            let mut agent = match self.executor_config.clone() {
+                Some(agent) => *agent,
+                None => ExecutorConfigs::get_cached()
+                    .get_coding_agent(&executor_profile_id)
+                    .ok_or(ExecutorError::UnknownExecutorType(
+                        executor_profile_id.to_string(),
+                    ))?,
+            };
 
             agent.use_approvals(approvals.clone());
 
@@ -95,5 +103,25 @@ impl Executable for CodingAgentFollowUpRequest {
                 )
                 .await
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CodingAgentFollowUpRequest;
+
+    #[test]
+    fn legacy_request_without_executor_config_deserializes() {
+        let request: CodingAgentFollowUpRequest = serde_json::from_str(
+            r#"{
+                "prompt":"continue",
+                "session_id":"session-1",
+                "executor_profile_id":{"executor":"OPENCODE","variant":null},
+                "working_dir":null
+            }"#,
+        )
+        .unwrap();
+
+        assert!(request.executor_config.is_none());
     }
 }

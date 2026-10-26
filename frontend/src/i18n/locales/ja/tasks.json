@@ -229,6 +229,11 @@
     "noTasks": "このプロジェクトにタスクが見つかりません。"
   },
   "followUp": {
+    "opencodeOptions": "OpenCode 実行オプション",
+    "agent": "エージェント",
+    "model": "モデル",
+    "variant": "バリアント",
+    "defaultOption": "デフォルト",
     "clearReviewComments": "Clear Review Comments",
     "edit": "Edit",
     "queueForNextTurn": "Queue for next turn",

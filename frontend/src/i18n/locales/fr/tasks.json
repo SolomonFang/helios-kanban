@@ -214,6 +214,11 @@
     "startAttempt": "Démarrer une tentative"
   },
   "followUp": {
+    "opencodeOptions": "Options d'exécution OpenCode",
+    "agent": "Agent",
+    "model": "Modèle",
+    "variant": "Variante",
+    "defaultOption": "Par défaut",
     "stop": "Arrêter",
     "clearReviewComments": "Effacer les commentaires de révision",
     "resolveConflicts": "Résoudre les conflits",

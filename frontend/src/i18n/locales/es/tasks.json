@@ -229,6 +229,11 @@
     "noTasks": "No se encontraron tareas para este proyecto."
   },
   "followUp": {
+    "opencodeOptions": "Opciones de ejecución de OpenCode",
+    "agent": "Agente",
+    "model": "Modelo",
+    "variant": "Variante",
+    "defaultOption": "Predeterminado",
     "clearReviewComments": "Clear Review Comments",
     "edit": "Edit",
     "queueForNextTurn": "Queue for next turn",

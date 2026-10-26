@@ -214,6 +214,11 @@
     "startAttempt": "Start Attempt"
   },
   "followUp": {
+    "opencodeOptions": "OpenCode execution options",
+    "agent": "Agent",
+    "model": "Model",
+    "variant": "Variant",
+    "defaultOption": "Default",
     "stop": "Stop",
     "clearReviewComments": "Clear Review Comments",
     "resolveConflicts": "Resolve conflicts",

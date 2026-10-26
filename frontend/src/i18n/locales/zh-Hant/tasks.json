@@ -227,6 +227,11 @@
     "startAttempt": "開始嘗試"
   },
   "followUp": {
+    "opencodeOptions": "OpenCode 執行選項",
+    "agent": "模式",
+    "model": "模型",
+    "variant": "模型變體",
+    "defaultOption": "預設",
     "stop": "停止",
     "clearReviewComments": "清除審查評論",
     "resolveConflicts": "解決衝突",

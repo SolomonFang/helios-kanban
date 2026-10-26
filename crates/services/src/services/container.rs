@@ -1194,6 +1194,7 @@ pub trait ContainerService {
             ExecutorActionType::CodingAgentInitialRequest(CodingAgentInitialRequest {
                 prompt,
                 executor_profile_id: executor_profile_id.clone(),
+                executor_config: None,
                 working_dir,
             }),
             cleanup_action.map(Box::new),
@@ -1387,21 +1388,25 @@ pub trait ContainerService {
         let workspace_root = self.workspace_to_current_dir(workspace);
         #[cfg_attr(feature = "qa-mode", allow(unused_variables))]
         if let Some(msg_store) = self.get_msg_store_by_id(&execution_process.id).await
-            && let Some((executor_profile_id, working_dir)) = match executor_action.typ() {
-                ExecutorActionType::CodingAgentInitialRequest(request) => Some((
-                    &request.executor_profile_id,
-                    request.effective_dir(&workspace_root),
-                )),
-                ExecutorActionType::CodingAgentFollowUpRequest(request) => Some((
-                    &request.executor_profile_id,
-                    request.effective_dir(&workspace_root),
-                )),
-                ExecutorActionType::ReviewRequest(request) => Some((
-                    &request.executor_profile_id,
-                    request.effective_dir(&workspace_root),
-                )),
-                _ => None,
-            }
+            && let Some((executor_profile_id, executor_config, working_dir)) =
+                match executor_action.typ() {
+                    ExecutorActionType::CodingAgentInitialRequest(request) => Some((
+                        &request.executor_profile_id,
+                        request.executor_config.as_ref(),
+                        request.effective_dir(&workspace_root),
+                    )),
+                    ExecutorActionType::CodingAgentFollowUpRequest(request) => Some((
+                        &request.executor_profile_id,
+                        request.executor_config.as_ref(),
+                        request.effective_dir(&workspace_root),
+                    )),
+                    ExecutorActionType::ReviewRequest(request) => Some((
+                        &request.executor_profile_id,
+                        None,
+                        request.effective_dir(&workspace_root),
+                    )),
+                    _ => None,
+                }
         {
             #[cfg(feature = "qa-mode")]
             {
@@ -1410,8 +1415,10 @@ pub trait ContainerService {
             }
             #[cfg(not(feature = "qa-mode"))]
             {
-                if let Some(executor) =
-                    ExecutorConfigs::get_cached().get_coding_agent(executor_profile_id)
+                if let Some(executor) = executor_config
+                    .cloned()
+                    .map(|agent| *agent)
+                    .or_else(|| ExecutorConfigs::get_cached().get_coding_agent(executor_profile_id))
                 {
                     executor.normalize_logs(msg_store, &working_dir);
                 } else {
@@ -1539,6 +1546,7 @@ mod tests {
                 executor_profile_id: ExecutorProfileId::new(
                     executors::executors::BaseCodingAgent::ClaudeCode,
                 ),
+                executor_config: None,
                 working_dir: None,
             }),
             None,

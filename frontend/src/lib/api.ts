@@ -48,6 +48,7 @@ import {
   CheckEditorAvailabilityResponse,
   AvailabilityInfo,
   BaseCodingAgent,
+  CodingAgent,
   ExecutorProfileId,
   RunAgentSetupRequest,
   RunAgentSetupResponse,
@@ -1410,7 +1411,11 @@ export const queueApi = {
    */
   queue: async (
     sessionId: string,
-    data: { message: string; executor_profile_id: ExecutorProfileId }
+    data: {
+      message: string;
+      executor_profile_id: ExecutorProfileId;
+      executor_config?: CodingAgent;
+    }
   ): Promise<QueueStatus> => {
     const response = await makeRequest(`/api/sessions/${sessionId}/queue`, {
       method: 'POST',

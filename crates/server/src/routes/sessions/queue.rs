@@ -8,7 +8,10 @@ use db::models::{
     session::{Session, SessionError},
 };
 use deployment::Deployment;
-use executors::profile::ExecutorProfileId;
+use executors::{
+    executors::{BaseCodingAgent, CodingAgent},
+    profile::ExecutorProfileId,
+};
 use serde::Deserialize;
 use services::services::queued_message::QueueStatus;
 use ts_rs::TS;
@@ -21,6 +24,9 @@ use crate::{DeploymentImpl, error::ApiError, middleware::load_session_middleware
 pub struct QueueMessageRequest {
     pub message: String,
     pub executor_profile_id: ExecutorProfileId,
+    #[serde(default)]
+    #[ts(optional)]
+    pub executor_config: Option<Box<CodingAgent>>,
 }
 
 /// Queue a follow-up message to be executed when the current execution finishes
@@ -47,6 +53,14 @@ pub async fn queue_message(
         ));
     }
 
+    if payload.executor_config.as_ref().is_some_and(|config| {
+        BaseCodingAgent::from(config.as_ref()) != payload.executor_profile_id.executor
+    }) {
+        return Err(ApiError::BadRequest(
+            "Executor override does not match the executor profile".to_string(),
+        ));
+    }
+
     // Validate executor matches session if session has prior executions
     let expected_executor: Option<String> =
         ExecutionProcess::latest_executor_profile_for_session(pool, session.id)
@@ -67,6 +81,7 @@ pub async fn queue_message(
     let data = DraftFollowUpData {
         message: payload.message,
         executor_profile_id: payload.executor_profile_id,
+        executor_config: payload.executor_config,
     };
 
     let queued = deployment

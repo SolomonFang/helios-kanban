@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use executors::profile::ExecutorProfileId;
+use executors::{executors::CodingAgent, profile::ExecutorProfileId};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, SqlitePool};
 use strum_macros::{Display, EnumDiscriminants, EnumString};
@@ -22,6 +22,9 @@ pub enum ScratchError {
 pub struct DraftFollowUpData {
     pub message: String,
     pub executor_profile_id: ExecutorProfileId,
+    #[serde(default)]
+    #[ts(optional)]
+    pub executor_config: Option<Box<CodingAgent>>,
 }
 
 /// Data for preview settings scratch (URL override and screen size)
