@@ -48,7 +48,9 @@ export function useOpencodeConfigSchema(
   const schema = useMemo(() => {
     if (!data || executor !== BaseCodingAgent.OPENCODE) return baseSchema;
 
-    const model = data.models.find((option) => option.value === values.model);
+    const currentModel =
+      typeof values.model === 'string' ? values.model : data.current_model;
+    const model = data.models.find((option) => option.value === currentModel);
     const modelSchema = enumSchema(data.models, values.model);
     const variantSchema = model
       ? enumSchema(model.variants, values.variant)

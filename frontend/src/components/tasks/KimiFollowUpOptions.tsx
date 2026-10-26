@@ -44,7 +44,9 @@ export function KimiFollowUpOptions({ config, onChange, disabled }: Props) {
     () => withCurrentValue(data?.models ?? [], config.model),
     [data?.models, config.model]
   );
-  const selectedModel = models.find((model) => model.value === config.model);
+  const selectedModel = models.find(
+    (model) => model.value === (config.model ?? data?.current_model)
+  );
   const thinkingOptions = withCurrentValue(
     selectedModel?.variants ?? [],
     config.thinking

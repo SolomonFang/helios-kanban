@@ -527,7 +527,7 @@ export type AcpConfigOption = { value: string, label: string, };
 
 export type AcpModelOption = { value: string, label: string, variants: Array<AcpConfigOption>, };
 
-export type AcpConfigOptions = { models: Array<AcpModelOption>, agents: Array<AcpConfigOption>, };
+export type AcpConfigOptions = { current_model: string | null, models: Array<AcpModelOption>, agents: Array<AcpConfigOption>, };
 
 export type CommandBuilder = { 
 /**

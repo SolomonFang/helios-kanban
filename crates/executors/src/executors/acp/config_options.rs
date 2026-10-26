@@ -30,6 +30,7 @@ pub struct AcpModelOption {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS, PartialEq, Eq)]
 pub struct AcpConfigOptions {
+    pub current_model: Option<String>,
     pub models: Vec<AcpModelOption>,
     pub agents: Vec<AcpConfigOption>,
 }
@@ -132,6 +133,10 @@ async fn probe_config_options(
     let agents = options_by_id(&initial_options, "mode")
         .map(parse_options)
         .unwrap_or_default();
+    let current_model = options_by_id(&initial_options, "model")
+        .and_then(|option| option.get("currentValue"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
     let model_values = options_by_id(&initial_options, "model")
         .map(parse_options)
         .unwrap_or_default();
@@ -165,7 +170,11 @@ async fn probe_config_options(
         });
     }
 
-    Ok(AcpConfigOptions { models, agents })
+    Ok(AcpConfigOptions {
+        current_model,
+        models,
+        agents,
+    })
 }
 
 async fn request(
