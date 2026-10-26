@@ -1,13 +1,10 @@
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{path::Path, sync::Arc};
 
 use async_trait::async_trait;
-use command_group::{AsyncCommandGroup, AsyncGroupChild};
 use derivative::Derivative;
-use futures::StreamExt;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use tokio::{io::AsyncBufReadExt, process::Command};
 use ts_rs::TS;
 use workspace_utils::msg_store::MsgStore;
 
@@ -16,21 +13,11 @@ use crate::{
     command::{CmdOverrides, CommandBuildError, CommandBuilder, apply_overrides},
     env::ExecutionEnv,
     executors::{
-        AppendPrompt, AvailabilityInfo, ChildHandle, ExecutorError, ExecutorExitResult,
-        SpawnedChild, StandardCodingAgentExecutor, opencode::types::OpencodeExecutorEvent,
+        AppendPrompt, AvailabilityInfo, BaseCodingAgent, ExecutorError, SpawnedChild,
+        StandardCodingAgentExecutor, acp::AcpAgentHarness, utils::SlashCommandCacheKey,
     },
     logs::utils::patch,
-    stdout_dup::create_stdout_pipe_writer,
 };
-
-mod models;
-mod normalize_logs;
-mod sdk;
-mod slash_commands;
-mod types;
-
-use sdk::{LogWriter, RunConfig, generate_server_password, run_session, run_slash_command};
-use slash_commands::{OpencodeSlashCommand, hardcoded_slash_commands};
 
 #[derive(Derivative, Clone, Serialize, Deserialize, TS, JsonSchema)]
 #[derivative(Debug, PartialEq)]
@@ -57,259 +44,23 @@ pub struct Opencode {
     pub approvals: Option<Arc<dyn ExecutorApprovalService>>,
 }
 
-/// Represents a spawned OpenCode server with its base URL
-struct OpencodeServer {
-    #[allow(unused)]
-    child: Option<AsyncGroupChild>,
-    base_url: String,
-    server_password: ServerPassword,
-}
-
-impl Drop for OpencodeServer {
-    fn drop(&mut self) {
-        // kill the process properly using the kill helper as the native kill_on_drop doesn't work reliably causing orphaned processes and memory leaks
-        if let Some(mut child) = self.child.take() {
-            tokio::spawn(async move {
-                let _ = workspace_utils::process::kill_process_group(&mut child).await;
-            });
-        }
-    }
-}
-
-type ServerPassword = String;
-
 impl Opencode {
     fn build_command_builder(&self) -> Result<CommandBuilder, CommandBuildError> {
-        let builder = CommandBuilder::new("npx -y opencode-ai@1.1.51")
-            // Pass hostname/port as separate args so OpenCode treats them as explicitly set
-            // (it checks `process.argv.includes(\"--port\")` / `\"--hostname\"`).
-            .extend_params(["serve", "--hostname", "127.0.0.1", "--port", "0"]);
+        let builder = CommandBuilder::new("npx -y @opencode/cli@2.1.4").extend_params(["acp"]);
         apply_overrides(builder, &self.cmd)
     }
 
-    /// Compute a cache key for model context windows derived from the command
-    /// overrides (base command and params), which can affect the list of
-    /// available models. Environment variables are not part of the key.
-    fn compute_models_cache_key(&self) -> String {
-        serde_json::to_string(&self.cmd).unwrap_or_default()
-    }
-
-    /// Common boilerplate for spawning an OpenCode server process.
-    async fn spawn_server_process(
-        &self,
-        current_dir: &Path,
-        env: &ExecutionEnv,
-    ) -> Result<(AsyncGroupChild, ServerPassword), ExecutorError> {
-        let command_parts = self.build_command_builder()?.build_initial()?;
-        let (program_path, args) = command_parts.into_resolved().await?;
-
-        let server_password = generate_server_password();
-
-        let mut command = Command::new(program_path);
-        command
-            .kill_on_drop(true)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .current_dir(current_dir)
-            .env("NPM_CONFIG_LOGLEVEL", "error")
-            .env("NODE_NO_WARNINGS", "1")
-            .env("NO_COLOR", "1")
-            .env("OPENCODE_SERVER_USERNAME", "opencode")
-            .env("OPENCODE_SERVER_PASSWORD", &server_password)
-            .args(&args);
-
-        env.clone()
-            .with_profile(&self.cmd)
-            .apply_to_command(&mut command);
-
-        let child = command.group_spawn()?;
-
-        Ok((child, server_password))
-    }
-
-    /// Handles process spawning, waiting for the server URL
-    async fn spawn_server(
-        &self,
-        current_dir: &Path,
-        env: &ExecutionEnv,
-    ) -> Result<OpencodeServer, ExecutorError> {
-        let (mut child, server_password) = self.spawn_server_process(current_dir, env).await?;
-        let server_stdout = child.inner().stdout.take().ok_or_else(|| {
-            ExecutorError::Io(std::io::Error::other("OpenCode server missing stdout"))
-        })?;
-
-        let base_url = wait_for_server_url(server_stdout, None).await?;
-
-        Ok(OpencodeServer {
-            child: Some(child),
-            base_url,
-            server_password,
-        })
-    }
-
-    async fn spawn_inner(
-        &self,
-        current_dir: &Path,
-        prompt: &str,
-        resume_session: Option<&str>,
-        reset_to_message_id: Option<&str>,
-        env: &ExecutionEnv,
-    ) -> Result<SpawnedChild, ExecutorError> {
-        let slash_command = OpencodeSlashCommand::parse(prompt);
-        let combined_prompt = if slash_command.is_some() {
-            prompt.to_string()
-        } else {
-            self.append_prompt.combine_prompt(prompt)
-        };
-
-        let (mut child, server_password) = self.spawn_server_process(current_dir, env).await?;
-        let server_stdout = child.inner().stdout.take().ok_or_else(|| {
-            ExecutorError::Io(std::io::Error::other("OpenCode server missing stdout"))
-        })?;
-
-        let stdout = create_stdout_pipe_writer(&mut child)?;
-        let log_writer = LogWriter::new(stdout);
-
-        let (exit_signal_tx, exit_signal_rx) = tokio::sync::oneshot::channel();
-        let cancel = tokio_util::sync::CancellationToken::new();
-
-        // Prepare config values that will be moved into the spawned task
-        let directory = current_dir.to_string_lossy().to_string();
-        let approvals = if self.auto_approve {
-            None
-        } else {
-            self.approvals.clone()
-        };
-        let model = self.model.clone();
-        let model_variant = self.variant.clone();
-        let agent = self.agent.clone();
-        let auto_approve = self.auto_approve;
-        let resume_session_id = resume_session.map(|s| s.to_string());
-        let reset_to_message_id = reset_to_message_id.map(|s| s.to_string());
-        let models_cache_key = self.compute_models_cache_key();
-        let cancel_for_task = cancel.clone();
-        let commit_reminder = env.commit_reminder;
-        let commit_reminder_prompt = env.commit_reminder_prompt.clone();
-        let repo_context = env.repo_context.clone();
-
-        tokio::spawn(async move {
-            // Wait for server to print listening URL
-            let base_url = match wait_for_server_url(server_stdout, Some(log_writer.clone())).await
-            {
-                Ok(url) => url,
-                Err(err) => {
-                    let _ = log_writer
-                        .log_error(format!("OpenCode startup error: {err}"))
-                        .await;
-                    let _ = exit_signal_tx.send(ExecutorExitResult::Failure);
-                    return;
-                }
-            };
-
-            let config = RunConfig {
-                base_url,
-                directory,
-                prompt: combined_prompt,
-                resume_session_id,
-                reset_to_message_id,
-                model,
-                model_variant,
-                agent,
-                approvals,
-                auto_approve,
-                server_password,
-                models_cache_key,
-                commit_reminder,
-                commit_reminder_prompt,
-                repo_context,
-            };
-
-            let result = match slash_command {
-                Some(command) => {
-                    run_slash_command(config, log_writer.clone(), command, cancel_for_task).await
-                }
-                None => run_session(config, log_writer.clone(), cancel_for_task).await,
-            };
-            let exit_result = match result {
-                Ok(()) => ExecutorExitResult::Success,
-                Err(err) => {
-                    let _ = log_writer
-                        .log_error(format!("OpenCode executor error: {err}"))
-                        .await;
-                    ExecutorExitResult::Failure
-                }
-            };
-            let _ = exit_signal_tx.send(exit_result);
-        });
-
-        Ok(SpawnedChild {
-            child: ChildHandle::Group(child),
-            exit_signal: Some(exit_signal_rx),
-            cancel: Some(cancel),
-        })
-    }
-}
-
-fn format_tail(captured: Vec<String>) -> String {
-    captured
-        .into_iter()
-        .rev()
-        .take(12)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-async fn wait_for_server_url(
-    stdout: tokio::process::ChildStdout,
-    log_writer: Option<LogWriter>,
-) -> Result<String, ExecutorError> {
-    let mut lines = tokio::io::BufReader::new(stdout).lines();
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(180);
-    let mut captured: Vec<String> = Vec::new();
-
-    loop {
-        if tokio::time::Instant::now() > deadline {
-            return Err(ExecutorError::Io(std::io::Error::other(format!(
-                "Timed out waiting for OpenCode server to print listening URL.\nServer output tail:\n{}",
-                format_tail(captured)
-            ))));
+    fn acp_harness(&self) -> AcpAgentHarness {
+        let mut harness = AcpAgentHarness::with_session_namespace("opencode_sessions")
+            .with_native_session_resume(true)
+            .with_tool_auto_approve(self.auto_approve);
+        if let Some(model) = &self.model {
+            harness = harness.with_model(model.clone());
         }
-
-        let line = match tokio::time::timeout_at(deadline, lines.next_line()).await {
-            Ok(Ok(Some(line))) => line,
-            Ok(Ok(None)) => {
-                return Err(ExecutorError::Io(std::io::Error::other(format!(
-                    "OpenCode server exited before printing listening URL.\nServer output tail:\n{}",
-                    format_tail(captured)
-                ))));
-            }
-            Ok(Err(err)) => return Err(ExecutorError::Io(err)),
-            Err(_) => continue,
-        };
-
-        if let Some(log_writer) = &log_writer {
-            log_writer
-                .log_event(&OpencodeExecutorEvent::StartupLog {
-                    message: line.clone(),
-                })
-                .await?;
+        if let Some(agent) = &self.agent {
+            harness = harness.with_mode(agent.clone());
         }
-        if captured.len() < 64 {
-            captured.push(line.clone());
-        }
-
-        if let Some(url) = line.trim().strip_prefix("opencode server listening on ") {
-            // Keep draining stdout to avoid backpressure on the server, but don't block startup.
-            tokio::spawn(async move {
-                let mut lines = tokio::io::BufReader::new(lines.into_inner()).lines();
-                while let Ok(Some(_)) = lines.next_line().await {}
-            });
-            return Ok(url.trim().to_string());
-        }
+        harness
     }
 }
 
@@ -321,27 +72,23 @@ impl StandardCodingAgentExecutor for Opencode {
 
     async fn available_slash_commands(
         &self,
-        current_dir: &Path,
+        workdir: &Path,
     ) -> Result<futures::stream::BoxStream<'static, json_patch::Patch>, ExecutorError> {
-        let defaults = hardcoded_slash_commands();
         let this = self.clone();
-        let current_dir = current_dir.to_path_buf();
-
-        let initial = patch::slash_commands(defaults.clone(), true, None);
-
-        let discovery_stream = futures::stream::once(async move {
-            match this.discover_slash_commands(&current_dir).await {
-                Ok(commands) => patch::slash_commands(commands, false, None),
-                Err(e) => {
-                    tracing::warn!("Failed to discover OpenCode slash commands: {}", e);
-                    patch::slash_commands(defaults, false, Some(e.to_string()))
+        let workdir = workdir.to_path_buf();
+        Ok(Box::pin(futures::stream::once(async move {
+            let commands = match this.build_command_builder().and_then(|b| b.build_initial()) {
+                Ok(parts) => {
+                    let key = SlashCommandCacheKey::new(&workdir, &BaseCodingAgent::Opencode);
+                    super::acp::discover_acp_slash_commands(parts, &workdir, &this.cmd, &key).await
                 }
-            }
-        });
-
-        Ok(Box::pin(
-            futures::stream::once(async move { initial }).chain(discovery_stream),
-        ))
+                Err(e) => {
+                    tracing::warn!("Failed to build OpenCode command for slash command probe: {e}");
+                    Vec::new()
+                }
+            };
+            patch::slash_commands(commands, false, None)
+        })))
     }
 
     async fn spawn(
@@ -352,7 +99,17 @@ impl StandardCodingAgentExecutor for Opencode {
     ) -> Result<SpawnedChild, ExecutorError> {
         let env = setup_permissions_env(self.auto_approve, env);
         let env = setup_compaction_env(self.auto_compact, &env);
-        self.spawn_inner(current_dir, prompt, None, None, &env)
+        let command = self.build_command_builder()?.build_initial()?;
+        let combined_prompt = self.append_prompt.combine_prompt(prompt);
+        self.acp_harness()
+            .spawn_with_command(
+                current_dir,
+                combined_prompt,
+                command,
+                &env,
+                &self.cmd,
+                self.approvals.clone(),
+            )
             .await
     }
 
@@ -366,25 +123,30 @@ impl StandardCodingAgentExecutor for Opencode {
     ) -> Result<SpawnedChild, ExecutorError> {
         let env = setup_permissions_env(self.auto_approve, env);
         let env = setup_compaction_env(self.auto_compact, &env);
-        self.spawn_inner(
-            current_dir,
-            prompt,
-            Some(session_id),
-            reset_to_message_id,
-            &env,
-        )
-        .await
+        let command = self.build_command_builder()?.build_follow_up(&[])?;
+        let combined_prompt = self.append_prompt.combine_prompt(prompt);
+        self.acp_harness()
+            .spawn_follow_up_with_command(
+                current_dir,
+                combined_prompt,
+                session_id,
+                reset_to_message_id,
+                command,
+                &env,
+                &self.cmd,
+                self.approvals.clone(),
+            )
+            .await
     }
 
     fn normalize_logs(&self, msg_store: Arc<MsgStore>, worktree_path: &Path) {
-        normalize_logs::normalize_logs(msg_store, worktree_path);
+        super::acp::normalize_logs(msg_store, worktree_path);
     }
 
     fn default_mcp_config_path(&self) -> Option<std::path::PathBuf> {
         #[cfg(not(windows))]
         {
             let base_dirs = xdg::BaseDirectories::with_prefix("opencode");
-            // First try opencode.json, then opencode.jsonc
             base_dirs
                 .get_config_file("opencode.json")
                 .filter(|p| p.exists())
@@ -411,11 +173,6 @@ impl StandardCodingAgentExecutor for Opencode {
             .map(|p| p.exists())
             .unwrap_or(false);
 
-        // Check multiple installation indicator paths:
-        // 1. XDG config dir: $XDG_CONFIG_HOME/opencode
-        // 2. XDG data dir: $XDG_DATA_HOME/opencode
-        // 3. XDG state dir: $XDG_STATE_HOME/opencode
-        // 4. OpenCode CLI home: ~/.opencode
         #[cfg(not(windows))]
         let installation_indicator_found = {
             let base_dirs = xdg::BaseDirectories::with_prefix("opencode");
@@ -536,7 +293,16 @@ fn merge_compaction_config(existing_json: Option<&str>) -> String {
 mod tests {
     use serde_json::Value;
 
-    use super::merge_question_deny;
+    use super::{Opencode, merge_question_deny};
+
+    #[test]
+    fn default_command_uses_opencode_cli_acp() {
+        let opencode: Opencode = serde_json::from_str("{}").unwrap();
+        let builder = opencode.build_command_builder().unwrap();
+
+        assert_eq!(builder.base, "npx -y @opencode/cli@2.1.4");
+        assert_eq!(builder.params, Some(vec!["acp".to_string()]));
+    }
 
     #[test]
     fn merge_question_deny_preserves_valid_custom_permissions() {

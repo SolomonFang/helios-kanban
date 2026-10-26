@@ -193,10 +193,7 @@ impl CodingAgent {
                 BaseAgentCapability::SessionFork,
                 BaseAgentCapability::ContextUsage,
             ],
-            Self::Opencode(_) => vec![
-                BaseAgentCapability::SessionFork,
-                BaseAgentCapability::ContextUsage,
-            ],
+            Self::Opencode(_) => vec![BaseAgentCapability::SessionFork],
             // The app-server has no per-message truncation API, so follow-ups
             // always resume the full rollout.
             Self::Codex(_) => vec![
