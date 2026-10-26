@@ -50,17 +50,41 @@ impl Opencode {
         apply_overrides(builder, &self.cmd)
     }
 
+    fn acp_model(&self) -> Option<String> {
+        self.model.as_ref().map(|model| {
+            match self
+                .variant
+                .as_deref()
+                .filter(|variant| !variant.is_empty())
+            {
+                Some(variant) => format!("{model}/{variant}"),
+                None => model.clone(),
+            }
+        })
+    }
+
     fn acp_harness(&self) -> AcpAgentHarness {
         let mut harness = AcpAgentHarness::with_session_namespace("opencode_sessions")
             .with_native_session_resume(true)
-            .with_tool_auto_approve(self.auto_approve);
-        if let Some(model) = &self.model {
-            harness = harness.with_model(model.clone());
+            .with_tool_auto_approve(self.auto_approve)
+            .with_model_via_config_option(true);
+        if let Some(model) = self.acp_model() {
+            harness = harness.with_model(model);
         }
         if let Some(agent) = &self.agent {
             harness = harness.with_mode(agent.clone());
         }
         harness
+    }
+
+    fn setup_config_env(&self, env: &ExecutionEnv) -> ExecutionEnv {
+        let mut env = env.clone();
+        let merged = merge_config(
+            env.get("OPENCODE_CONFIG_CONTENT").map(String::as_str),
+            self.auto_compact,
+        );
+        env.insert("OPENCODE_CONFIG_CONTENT", merged);
+        env
     }
 }
 
@@ -98,7 +122,7 @@ impl StandardCodingAgentExecutor for Opencode {
         env: &ExecutionEnv,
     ) -> Result<SpawnedChild, ExecutorError> {
         let env = setup_permissions_env(self.auto_approve, env);
-        let env = setup_compaction_env(self.auto_compact, &env);
+        let env = self.setup_config_env(&env);
         let command = self.build_command_builder()?.build_initial()?;
         let combined_prompt = self.append_prompt.combine_prompt(prompt);
         self.acp_harness()
@@ -122,7 +146,7 @@ impl StandardCodingAgentExecutor for Opencode {
         env: &ExecutionEnv,
     ) -> Result<SpawnedChild, ExecutorError> {
         let env = setup_permissions_env(self.auto_approve, env);
-        let env = setup_compaction_env(self.auto_compact, &env);
+        let env = self.setup_config_env(&env);
         let command = self.build_command_builder()?.build_follow_up(&[])?;
         let combined_prompt = self.append_prompt.combine_prompt(prompt);
         self.acp_harness()
@@ -263,18 +287,7 @@ fn merge_question_deny(existing_json: &str) -> String {
     serde_json::to_string(&permissions).unwrap_or_else(|_| r#"{"question":"deny"}"#.to_string())
 }
 
-fn setup_compaction_env(auto_compact: bool, env: &ExecutionEnv) -> ExecutionEnv {
-    if !auto_compact {
-        return env.clone();
-    }
-
-    let mut env = env.clone();
-    let merged = merge_compaction_config(env.get("OPENCODE_CONFIG_CONTENT").map(String::as_str));
-    env.insert("OPENCODE_CONFIG_CONTENT", merged);
-    env
-}
-
-fn merge_compaction_config(existing_json: Option<&str>) -> String {
+fn merge_config(existing_json: Option<&str>, auto_compact: bool) -> String {
     let mut config: Map<String, Value> = existing_json
         .and_then(|value| serde_json::from_str(value.trim()).ok())
         .unwrap_or_default();
@@ -283,17 +296,18 @@ fn merge_compaction_config(existing_json: Option<&str>) -> String {
         .remove("compaction")
         .and_then(|value| value.as_object().cloned())
         .unwrap_or_default();
-    compaction.insert("auto".to_string(), Value::Bool(true));
+    compaction.insert("auto".to_string(), Value::Bool(auto_compact));
     config.insert("compaction".to_string(), Value::Object(compaction));
 
-    serde_json::to_string(&config).unwrap_or_else(|_| r#"{"compaction":{"auto":true}}"#.to_string())
+    serde_json::to_string(&config)
+        .unwrap_or_else(|_| format!(r#"{{"compaction":{{"auto":{auto_compact}}}}}"#))
 }
 
 #[cfg(test)]
 mod tests {
     use serde_json::Value;
 
-    use super::{Opencode, merge_question_deny};
+    use super::{Opencode, merge_config, merge_question_deny};
 
     #[test]
     fn default_command_uses_opencode_cli_acp() {
@@ -302,6 +316,43 @@ mod tests {
 
         assert_eq!(builder.base, "npx -y @opencode/cli@2.1.4");
         assert_eq!(builder.params, Some(vec!["acp".to_string()]));
+    }
+
+    #[test]
+    fn acp_model_includes_variant() {
+        let opencode: Opencode =
+            serde_json::from_str(r#"{"model":"anthropic/claude-sonnet-4-5","variant":"high"}"#)
+                .unwrap();
+
+        assert_eq!(
+            opencode.acp_model().as_deref(),
+            Some("anthropic/claude-sonnet-4-5/high")
+        );
+    }
+
+    #[test]
+    fn compaction_config_applies_enabled_and_disabled_values() {
+        for (auto_compact, expected) in [(true, true), (false, false)] {
+            let merged = merge_config(
+                Some(r#"{"compaction":{"reserved":10000},"model":"test/model"}"#),
+                auto_compact,
+            );
+            let parsed: Value = serde_json::from_str(&merged).unwrap();
+            assert_eq!(
+                parsed.pointer("/compaction/auto").and_then(Value::as_bool),
+                Some(expected)
+            );
+            assert_eq!(
+                parsed
+                    .pointer("/compaction/reserved")
+                    .and_then(Value::as_u64),
+                Some(10000)
+            );
+            assert_eq!(
+                parsed.get("model").and_then(Value::as_str),
+                Some("test/model")
+            );
+        }
     }
 
     #[test]

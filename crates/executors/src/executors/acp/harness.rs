@@ -30,6 +30,7 @@ use crate::{
 pub struct AcpAgentHarness {
     session_namespace: String,
     model: Option<String>,
+    model_via_config_option: bool,
     mode: Option<String>,
     native_session_resume: bool,
     tool_auto_approve: bool,
@@ -48,6 +49,7 @@ impl AcpAgentHarness {
         Self {
             session_namespace: "gemini_sessions".to_string(),
             model: None,
+            model_via_config_option: false,
             mode: None,
             native_session_resume: false,
             tool_auto_approve: false,
@@ -59,6 +61,7 @@ impl AcpAgentHarness {
         Self {
             session_namespace: namespace.into(),
             model: None,
+            model_via_config_option: false,
             mode: None,
             native_session_resume: false,
             tool_auto_approve: false,
@@ -67,6 +70,11 @@ impl AcpAgentHarness {
 
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = Some(model.into());
+        self
+    }
+
+    pub fn with_model_via_config_option(mut self, enabled: bool) -> Self {
+        self.model_via_config_option = enabled;
         self
     }
 
@@ -317,6 +325,7 @@ impl AcpAgentHarness {
             Some(exit_tx),
             self.session_namespace.clone(),
             self.model.clone(),
+            self.model_via_config_option,
             self.mode.clone(),
             self.native_session_resume,
             self.tool_auto_approve,
@@ -374,6 +383,7 @@ impl AcpAgentHarness {
             Some(exit_tx),
             self.session_namespace.clone(),
             self.model.clone(),
+            self.model_via_config_option,
             self.mode.clone(),
             self.native_session_resume,
             self.tool_auto_approve,
@@ -399,6 +409,7 @@ impl AcpAgentHarness {
         exit_signal: Option<tokio::sync::oneshot::Sender<ExecutorExitResult>>,
         session_namespace: String,
         model: Option<String>,
+        model_via_config_option: bool,
         mode: Option<String>,
         native_session_resume: bool,
         tool_auto_approve: bool,
@@ -500,6 +511,7 @@ impl AcpAgentHarness {
             exit_signal,
             session_namespace,
             model,
+            model_via_config_option,
             mode,
             native_session_resume,
             tool_auto_approve,
@@ -529,6 +541,7 @@ impl AcpAgentHarness {
         exit_signal: Option<tokio::sync::oneshot::Sender<ExecutorExitResult>>,
         session_namespace: String,
         model: Option<String>,
+        model_via_config_option: bool,
         mode: Option<String>,
         native_session_resume: bool,
         tool_auto_approve: bool,
@@ -728,21 +741,29 @@ impl AcpAgentHarness {
                             .send(AcpEvent::SessionStart(display_session_id.clone()).to_string());
 
                         if let Some(model) = model.clone() {
-                            match conn
-                                .set_session_model(proto::SetSessionModelRequest::new(
+                            let result = if model_via_config_option {
+                                conn.set_session_config_option(
+                                    proto::SetSessionConfigOptionRequest::new(
+                                        proto::SessionId::new(acp_session_id.clone()),
+                                        "model",
+                                        model,
+                                    ),
+                                )
+                                .await
+                            } else {
+                                conn.set_session_model(proto::SetSessionModelRequest::new(
                                     proto::SessionId::new(acp_session_id.clone()),
                                     model,
                                 ))
                                 .await
-                            {
-                                Ok(_) => {}
-                                Err(e) => {
-                                    // Not safety-critical: surface the failure
-                                    // but keep running on the default model.
-                                    error!("Failed to set session model: {e}");
-                                    let _ = log_tx
-                                        .send(AcpEvent::Error(format!("{e}")).to_string());
-                                }
+                                .map(|_| ())
+                            };
+                            if let Err(e) = result {
+                                // Not safety-critical: surface the failure
+                                // but keep running on the default model.
+                                error!("Failed to set session model: {e}");
+                                let _ = log_tx
+                                    .send(AcpEvent::Error(format!("{e}")).to_string());
                             }
                         }
 
@@ -1045,6 +1066,7 @@ mod tests {
             Some(exit_tx),
             session_namespace.clone(),
             None,
+            false,
             mode,
             false,
             false,

@@ -72,6 +72,19 @@ impl ClientSideConnection {
     pub fn subscribe(&self) -> StreamReceiver {
         self.conn.subscribe()
     }
+
+    pub async fn set_session_config_option(
+        &self,
+        args: SetSessionConfigOptionRequest,
+    ) -> Result<()> {
+        self.conn
+            .request::<Option<serde_json::Value>>(
+                "session/set_config_option",
+                Some(ClientRequest::SetSessionConfigOptionRequest(args)),
+            )
+            .await
+            .map(|_| ())
+    }
 }
 
 #[async_trait::async_trait(?Send)]

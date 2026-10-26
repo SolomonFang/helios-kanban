@@ -1462,6 +1462,29 @@ impl ModelInfo {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SetSessionConfigOptionRequest {
+    pub session_id: SessionId,
+    pub config_id: String,
+    pub value: String,
+}
+
+impl SetSessionConfigOptionRequest {
+    #[must_use]
+    pub fn new(
+        session_id: impl Into<SessionId>,
+        config_id: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
+        Self {
+            session_id: session_id.into(),
+            config_id: config_id.into(),
+            value: value.into(),
+        }
+    }
+}
+
 /// **UNSTABLE**
 ///
 /// This capability is not part of the spec yet, and may be removed or changed at any point.
@@ -2007,6 +2030,7 @@ pub enum ClientRequest {
     ///
     /// Select a model for a given session.
     SetSessionModelRequest(SetSessionModelRequest),
+    SetSessionConfigOptionRequest(SetSessionConfigOptionRequest),
     /// Handles extension method requests from the client.
     ///
     /// Extension methods provide a way to add custom functionality while maintaining
@@ -2031,6 +2055,7 @@ impl ClientRequest {
             Self::PromptRequest(_) => AGENT_METHOD_NAMES.session_prompt,
             #[cfg(feature = "unstable_session_model")]
             Self::SetSessionModelRequest(_) => AGENT_METHOD_NAMES.session_set_model,
+            Self::SetSessionConfigOptionRequest(_) => "session/set_config_option",
             Self::ExtMethodRequest(ext_request) => &ext_request.method,
         }
     }
